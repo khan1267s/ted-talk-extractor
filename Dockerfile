@@ -36,6 +36,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5000/ || exit 1
 
-# Run the application using gunicorn (production-ready)
-# Use PORT environment variable if available, otherwise default to 5000
-CMD gunicorn --bind 0.0.0.0:${PORT:-5000} app:app 
+# Run the application using our Python startup script
+CMD ["python", "run.py"] 
