@@ -24,6 +24,9 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p static/clips downloads templates
 
+# Make start script executable
+RUN chmod +x start.sh
+
 # Set environment variables
 ENV FLASK_APP=app.py
 ENV FLASK_ENV=production
