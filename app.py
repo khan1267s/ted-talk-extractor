@@ -393,12 +393,46 @@ def process_job(job_id, url, max_clips):
     global jobs
     
     try:
+        # Step 1: Initialize
         jobs[job_id]['status'] = 'processing'
         jobs[job_id]['progress'] = 0
-        jobs[job_id]['message'] = 'Downloading video...'
+        jobs[job_id]['message'] = 'Initializing download...'
+        time.sleep(1)  # Brief pause for UI update
         
-        # Process the video
-        clip_paths = extractor.process_video(url, max_clips)
+        # Step 2: Download video
+        jobs[job_id]['progress'] = 10
+        jobs[job_id]['message'] = 'Downloading video from YouTube...'
+        video_path = extractor.download_video(url)
+        
+        if not video_path:
+            jobs[job_id]['status'] = 'failed'
+            jobs[job_id]['message'] = 'Failed to download video'
+            return
+        
+        # Step 3: Analyze video
+        jobs[job_id]['progress'] = 30
+        jobs[job_id]['message'] = 'Analyzing video structure...'
+        segments = extractor.find_speaker_segments(video_path)
+        
+        if not segments:
+            jobs[job_id]['status'] = 'failed'
+            jobs[job_id]['message'] = 'No valid speaker segments found'
+            return
+        
+        # Step 4: Extract clips
+        jobs[job_id]['progress'] = 60
+        jobs[job_id]['message'] = f'Extracting {min(len(segments), max_clips)} clips...'
+        clip_paths = extractor.extract_clips(video_path, segments, max_clips)
+        
+        # Step 5: Finalize
+        jobs[job_id]['progress'] = 90
+        jobs[job_id]['message'] = 'Finalizing clips...'
+        
+        # Clean up
+        try:
+            os.remove(video_path)
+        except:
+            pass
         
         if clip_paths:
             jobs[job_id]['status'] = 'completed'
@@ -408,7 +442,7 @@ def process_job(job_id, url, max_clips):
             jobs[job_id]['completed_at'] = datetime.now().isoformat()
         else:
             jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['message'] = 'No speaker segments found or processing failed'
+            jobs[job_id]['message'] = 'No clips could be extracted'
             
     except Exception as e:
         jobs[job_id]['status'] = 'failed'
@@ -420,12 +454,40 @@ def process_uploaded_job(job_id, file_path, max_clips):
     global jobs
     
     try:
+        # Step 1: Initialize
         jobs[job_id]['status'] = 'processing'
         jobs[job_id]['progress'] = 0
-        jobs[job_id]['message'] = 'Processing uploaded video...'
+        jobs[job_id]['message'] = 'Initializing video processing...'
+        time.sleep(1)  # Brief pause for UI update
         
-        # Process the uploaded video file directly
-        clip_paths = extractor.process_uploaded_video(file_path, max_clips)
+        # Step 2: Validate file
+        jobs[job_id]['progress'] = 20
+        jobs[job_id]['message'] = 'Validating uploaded video...'
+        
+        # Step 3: Analyze video
+        jobs[job_id]['progress'] = 40
+        jobs[job_id]['message'] = 'Analyzing video for speaker segments...'
+        segments = extractor.find_speaker_segments(file_path)
+        
+        if not segments:
+            jobs[job_id]['status'] = 'failed'
+            jobs[job_id]['message'] = 'No valid speaker segments found in uploaded video'
+            return
+        
+        # Step 4: Extract clips
+        jobs[job_id]['progress'] = 70
+        jobs[job_id]['message'] = f'Extracting {min(len(segments), max_clips)} clips...'
+        clip_paths = extractor.extract_clips(file_path, segments, max_clips)
+        
+        # Step 5: Finalize
+        jobs[job_id]['progress'] = 90
+        jobs[job_id]['message'] = 'Finalizing clips and cleaning up...'
+        
+        # Clean up uploaded file
+        try:
+            os.remove(file_path)
+        except:
+            pass
         
         if clip_paths:
             jobs[job_id]['status'] = 'completed'
@@ -435,7 +497,7 @@ def process_uploaded_job(job_id, file_path, max_clips):
             jobs[job_id]['completed_at'] = datetime.now().isoformat()
         else:
             jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['message'] = 'No speaker segments found or processing failed'
+            jobs[job_id]['message'] = 'No clips could be extracted from uploaded video'
             
     except Exception as e:
         jobs[job_id]['status'] = 'failed'
