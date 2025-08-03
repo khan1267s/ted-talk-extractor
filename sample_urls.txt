@@ -1,0 +1,18 @@
+# Sample TED Talk URLs for testing
+# Each URL should be on a separate line
+# Lines starting with # are comments and will be ignored
+
+# Simon Sinek - Start With Why
+https://www.youtube.com/watch?v=u4ZoJKF_VuA
+
+# Amy Cuddy - Power Poses
+https://www.youtube.com/watch?v=Ks-_Mh1QhMc
+
+# Brene Brown - Vulnerability
+https://www.youtube.com/watch?v=iCvmsMzlF7o
+
+# Ken Robinson - Do Schools Kill Creativity?
+https://www.youtube.com/watch?v=iG9CE55wbtY
+
+# Susan Cain - The Power of Introverts
+https://www.youtube.com/watch?v=c0KYU2j0TM4 

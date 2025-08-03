@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TED Talk Speaker Extractor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .main-container {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .hero-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 20px 20px 0 0;
+            padding: 3rem 0;
+        }
+        
+        .form-container {
+            padding: 2rem;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 10px;
+            padding: 12px 30px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .progress {
+            height: 10px;
+            border-radius: 10px;
+            background-color: #e9ecef;
+        }
+        
+        .progress-bar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 10px;
+        }
+        
+        .job-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .job-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        .status-badge {
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        
+        .status-queued { background-color: #ffc107; color: #000; }
+        .status-processing { background-color: #17a2b8; color: white; }
+        .status-completed { background-color: #28a745; color: white; }
+        .status-failed { background-color: #dc3545; color: white; }
+        
+        .clip-item {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            border-left: 4px solid #667eea;
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .feature-icon {
+            font-size: 2rem;
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+        
+        .alert {
+            border-radius: 15px;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid py-4">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <div class="main-container">
+                    <!-- Hero Section -->
+                    <div class="hero-section text-center">
+                        <div class="container">
+                            <h1 class="display-4 fw-bold mb-3">
+                                <i class="fas fa-video me-3"></i>
+                                TED Talk Speaker Extractor
+                            </h1>
+                            <p class="lead mb-0">
+                                Extract speaker-only clips from TED Talks automatically
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <!-- Form Container -->
+                    <div class="form-container">
+                        <div class="row">
+                            <div class="col-lg-8">
+                                <!-- Input Form -->
+                                <div class="card border-0 shadow-sm">
+                                    <div class="card-body p-4">
+                                        <h4 class="card-title mb-4">
+                                            <i class="fas fa-link me-2"></i>
+                                            Process TED Talk
+                                        </h4>
+                                        
+                                        <form id="processForm">
+                                            <div class="mb-3">
+                                                <label for="videoUrl" class="form-label fw-bold">
+                                                    YouTube URL
+                                                </label>
+                                                <input type="url" 
+                                                       class="form-control form-control-lg" 
+                                                       id="videoUrl" 
+                                                       placeholder="https://youtu.be/..." 
+                                                       required>
+                                                <div class="form-text">
+                                                    Enter a TED Talk YouTube URL to extract speaker-only clips
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="mb-4">
+                                                <label for="maxClips" class="form-label fw-bold">
+                                                    Maximum Clips
+                                                </label>
+                                                <select class="form-select form-select-lg" id="maxClips">
+                                                    <option value="3">3 clips</option>
+                                                    <option value="5" selected>5 clips</option>
+                                                    <option value="10">10 clips</option>
+                                                </select>
+                                                <div class="form-text">
+                                                    Number of speaker-only clips to extract (30 seconds each)
+                                                </div>
+                                            </div>
+                                            
+                                            <button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn">
+                                                <i class="fas fa-play me-2"></i>
+                                                Start Processing
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                                
+                                <!-- Progress Section -->
+                                <div id="progressSection" class="mt-4" style="display: none;">
+                                    <div class="card border-0 shadow-sm">
+                                        <div class="card-body p-4">
+                                            <h5 class="card-title mb-3">
+                                                <i class="fas fa-cogs me-2"></i>
+                                                Processing Status
+                                            </h5>
+                                            
+                                            <div class="mb-3">
+                                                <div class="d-flex justify-content-between mb-2">
+                                                    <span id="progressText">Initializing...</span>
+                                                    <span id="progressPercent">0%</span>
+                                                </div>
+                                                <div class="progress">
+                                                    <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div id="statusMessage" class="alert alert-info">
+                                                <i class="fas fa-info-circle me-2"></i>
+                                                <span id="statusText">Preparing to process video...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Results Section -->
+                                <div id="resultsSection" class="mt-4" style="display: none;">
+                                    <div class="card border-0 shadow-sm">
+                                        <div class="card-body p-4">
+                                            <h5 class="card-title mb-3">
+                                                <i class="fas fa-download me-2"></i>
+                                                Extracted Clips
+                                            </h5>
+                                            
+                                            <div id="clipsList">
+                                                <!-- Clips will be added here -->
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-4">
+                                <!-- Features -->
+                                <div class="card border-0 shadow-sm mb-4">
+                                    <div class="card-body p-4">
+                                        <h5 class="card-title mb-4">
+                                            <i class="fas fa-star me-2"></i>
+                                            Features
+                                        </h5>
+                                        
+                                        <div class="row text-center">
+                                            <div class="col-6 mb-3">
+                                                <div class="feature-icon">
+                                                    <i class="fas fa-user"></i>
+                                                </div>
+                                                <h6>Speaker Detection</h6>
+                                                <small class="text-muted">AI-powered speaker identification</small>
+                                            </div>
+                                            <div class="col-6 mb-3">
+                                                <div class="feature-icon">
+                                                    <i class="fas fa-cut"></i>
+                                                </div>
+                                                <h6>Smart Clipping</h6>
+                                                <small class="text-muted">30-second optimized clips</small>
+                                            </div>
+                                            <div class="col-6 mb-3">
+                                                <div class="feature-icon">
+                                                    <i class="fas fa-ban"></i>
+                                                </div>
+                                                <h6>No Overlap</h6>
+                                                <small class="text-muted">Non-overlapping segments</small>
+                                            </div>
+                                            <div class="col-6 mb-3">
+                                                <div class="feature-icon">
+                                                    <i class="fas fa-bolt"></i>
+                                                </div>
+                                                <h6>Fast Processing</h6>
+                                                <small class="text-muted">Optimized for speed</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Recent Jobs -->
+                                <div class="card border-0 shadow-sm">
+                                    <div class="card-body p-4">
+                                        <h5 class="card-title mb-3">
+                                            <i class="fas fa-history me-2"></i>
+                                            Recent Jobs
+                                        </h5>
+                                        
+                                        <div id="jobsList">
+                                            <!-- Jobs will be added here -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentJobId = null;
+        let statusCheckInterval = null;
+
+        // Form submission
+        document.getElementById('processForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const url = document.getElementById('videoUrl').value;
+            const maxClips = parseInt(document.getElementById('maxClips').value);
+            
+            if (!url) {
+                showAlert('Please enter a YouTube URL', 'danger');
+                return;
+            }
+            
+            // Show progress section
+            document.getElementById('progressSection').style.display = 'block';
+            document.getElementById('resultsSection').style.display = 'none';
+            document.getElementById('submitBtn').disabled = true;
+            
+            try {
+                const response = await fetch('/api/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        url: url,
+                        max_clips: maxClips
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.job_id) {
+                    currentJobId = data.job_id;
+                    startStatusCheck();
+                    showAlert('Job started successfully!', 'success');
+                } else {
+                    showAlert('Failed to start job: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'danger');
+            }
+        });
+
+        function startStatusCheck() {
+            if (statusCheckInterval) {
+                clearInterval(statusCheckInterval);
+            }
+            
+            statusCheckInterval = setInterval(checkJobStatus, 2000);
+        }
+
+        async function checkJobStatus() {
+            if (!currentJobId) return;
+            
+            try {
+                const response = await fetch(`/api/job/${currentJobId}`);
+                const job = await response.json();
+                
+                updateProgress(job);
+                
+                if (job.status === 'completed' || job.status === 'failed') {
+                    clearInterval(statusCheckInterval);
+                    document.getElementById('submitBtn').disabled = false;
+                    
+                    if (job.status === 'completed') {
+                        showResults(job);
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking job status:', error);
+            }
+        }
+
+        function updateProgress(job) {
+            const progressBar = document.getElementById('progressBar');
+            const progressPercent = document.getElementById('progressPercent');
+            const progressText = document.getElementById('progressText');
+            const statusText = document.getElementById('statusText');
+            const statusMessage = document.getElementById('statusMessage');
+            
+            progressBar.style.width = job.progress + '%';
+            progressPercent.textContent = job.progress + '%';
+            progressText.textContent = job.message;
+            statusText.textContent = job.message;
+            
+            // Update status message color
+            statusMessage.className = 'alert';
+            if (job.status === 'processing') {
+                statusMessage.classList.add('alert-info');
+            } else if (job.status === 'completed') {
+                statusMessage.classList.add('alert-success');
+            } else if (job.status === 'failed') {
+                statusMessage.classList.add('alert-danger');
+            }
+        }
+
+        function showResults(job) {
+            const resultsSection = document.getElementById('resultsSection');
+            const clipsList = document.getElementById('clipsList');
+            
+            resultsSection.style.display = 'block';
+            clipsList.innerHTML = '';
+            
+            if (job.clips && job.clips.length > 0) {
+                job.clips.forEach((clip, index) => {
+                    const clipElement = document.createElement('div');
+                    clipElement.className = 'clip-item';
+                    clipElement.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">Clip ${index + 1}</h6>
+                                <small class="text-muted">${clip.name}</small>
+                            </div>
+                            <a href="${clip.url}" class="btn btn-sm btn-primary" download>
+                                <i class="fas fa-download me-1"></i>
+                                Download
+                            </a>
+                        </div>
+                    `;
+                    clipsList.appendChild(clipElement);
+                });
+            } else {
+                clipsList.innerHTML = '<div class="alert alert-warning">No clips were extracted.</div>';
+            }
+        }
+
+        function showAlert(message, type) {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            const container = document.querySelector('.form-container');
+            container.insertBefore(alertDiv, container.firstChild);
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                if (alertDiv.parentNode) {
+                    alertDiv.remove();
+                }
+            }, 5000);
+        }
+
+        // Load recent jobs on page load
+        async function loadRecentJobs() {
+            try {
+                const response = await fetch('/api/jobs');
+                const jobs = await response.json();
+                
+                const jobsList = document.getElementById('jobsList');
+                jobsList.innerHTML = '';
+                
+                jobs.slice(0, 5).forEach(job => {
+                    const jobElement = document.createElement('div');
+                    jobElement.className = 'job-card p-3 mb-2';
+                    jobElement.innerHTML = `
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">${job.url.substring(0, 30)}...</h6>
+                                <small class="text-muted">${new Date(job.created_at).toLocaleString()}</small>
+                            </div>
+                            <span class="status-badge status-${job.status}">${job.status}</span>
+                        </div>
+                        <div class="mt-2">
+                            <small>${job.message}</small>
+                        </div>
+                    `;
+                    jobsList.appendChild(jobElement);
+                });
+            } catch (error) {
+                console.error('Error loading jobs:', error);
+            }
+        }
+
+        // Load jobs on page load
+        document.addEventListener('DOMContentLoaded', loadRecentJobs);
+    </script>
+</body>
+</html> 
