@@ -146,40 +146,85 @@
                                             Process TED Talk
                                         </h4>
                                         
-                                        <form id="processForm">
-                                            <div class="mb-3">
-                                                <label for="videoUrl" class="form-label fw-bold">
-                                                    YouTube URL
-                                                </label>
-                                                <input type="url" 
-                                                       class="form-control form-control-lg" 
-                                                       id="videoUrl" 
-                                                       placeholder="https://youtu.be/..." 
-                                                       required>
-                                                <div class="form-text">
-                                                    Enter a TED Talk YouTube URL to extract speaker-only clips
-                                                </div>
+                                        <!-- Tab Navigation -->
+                                        <ul class="nav nav-pills nav-fill mb-4" id="inputTabs" role="tablist">
+                                            <li class="nav-item" role="presentation">
+                                                <button class="nav-link active" id="url-tab" data-bs-toggle="pill" data-bs-target="#url-pane" type="button" role="tab">
+                                                    <i class="fas fa-link me-2"></i>YouTube URL
+                                                </button>
+                                            </li>
+                                            <li class="nav-item" role="presentation">
+                                                <button class="nav-link" id="upload-tab" data-bs-toggle="pill" data-bs-target="#upload-pane" type="button" role="tab">
+                                                    <i class="fas fa-upload me-2"></i>Upload Video
+                                                </button>
+                                            </li>
+                                        </ul>
+                                        
+                                        <!-- Tab Content -->
+                                        <div class="tab-content" id="inputTabContent">
+                                            <!-- YouTube URL Tab -->
+                                            <div class="tab-pane fade show active" id="url-pane" role="tabpanel">
+                                                <form id="processForm">
+                                                    <div class="mb-3">
+                                                        <label for="videoUrl" class="form-label fw-bold">
+                                                            YouTube URL
+                                                        </label>
+                                                        <input type="url" 
+                                                               class="form-control form-control-lg" 
+                                                               id="videoUrl" 
+                                                               placeholder="https://youtu.be/..." 
+                                                               required>
+                                                        <div class="form-text">
+                                                            Enter a TED Talk YouTube URL to extract speaker-only clips
+                                                        </div>
+                                                    </div>
+                                                </form>
                                             </div>
                                             
-                                            <div class="mb-4">
-                                                <label for="maxClips" class="form-label fw-bold">
-                                                    Maximum Clips
-                                                </label>
-                                                <select class="form-select form-select-lg" id="maxClips">
-                                                    <option value="3">3 clips</option>
-                                                    <option value="5" selected>5 clips</option>
-                                                    <option value="10">10 clips</option>
-                                                </select>
-                                                <div class="form-text">
-                                                    Number of speaker-only clips to extract (30 seconds each)
-                                                </div>
+                                            <!-- File Upload Tab -->
+                                            <div class="tab-pane fade" id="upload-pane" role="tabpanel">
+                                                <form id="uploadForm" enctype="multipart/form-data">
+                                                    <div class="mb-3">
+                                                        <label for="videoFile" class="form-label fw-bold">
+                                                            Upload Video File
+                                                        </label>
+                                                        <input type="file" 
+                                                               class="form-control form-control-lg" 
+                                                               id="videoFile" 
+                                                               accept=".mp4,.avi,.mov,.mkv,.webm"
+                                                               required>
+                                                        <div class="form-text">
+                                                            Upload a TED Talk video file (MP4, AVI, MOV, MKV, WebM). Max size: 500MB
+                                                        </div>
+                                                    </div>
+                                                </form>
                                             </div>
+                                        </div>
                                             
-                                            <button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn">
-                                                <i class="fas fa-play me-2"></i>
-                                                Start Processing
-                                            </button>
-                                        </form>
+                                        <!-- Common Settings -->
+                                        <div class="mb-4">
+                                            <label for="maxClips" class="form-label fw-bold">
+                                                Maximum Clips
+                                            </label>
+                                            <select class="form-select form-select-lg" id="maxClips">
+                                                <option value="3">3 clips</option>
+                                                <option value="5" selected>5 clips</option>
+                                                <option value="10">10 clips</option>
+                                            </select>
+                                            <div class="form-text">
+                                                Number of speaker-only clips to extract (30 seconds each)
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Submit Buttons -->
+                                        <button type="submit" form="processForm" class="btn btn-primary btn-lg w-100" id="submitBtn">
+                                            <i class="fas fa-play me-2"></i>
+                                            Process YouTube URL
+                                        </button>
+                                        <button type="submit" form="uploadForm" class="btn btn-primary btn-lg w-100" id="uploadBtn" style="display: none;">
+                                            <i class="fas fa-upload me-2"></i>
+                                            Process Uploaded Video
+                                        </button>
                                     </div>
                                 </div>
                                 
@@ -290,6 +335,18 @@
         </div>
     </div>
 
+    <!-- Footer -->
+    <footer class="text-center py-4 mt-5">
+        <div class="container">
+            <div class="text-white-50">
+                <p class="mb-0">
+                    <i class="fas fa-code me-2"></i>
+                    Developed by <strong>Umer</strong>
+                </p>
+            </div>
+        </div>
+    </footer>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let currentJobId = null;
@@ -336,6 +393,74 @@
             } catch (error) {
                 showAlert('Error: ' + error.message, 'danger');
             }
+        });
+
+        // File upload form submission
+        document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('videoFile');
+            const maxClips = parseInt(document.getElementById('maxClips').value);
+            
+            if (!fileInput.files[0]) {
+                showAlert('Please select a video file', 'danger');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            
+            // Check file size (500MB limit)
+            if (file.size > 500 * 1024 * 1024) {
+                showAlert('File size must be less than 500MB', 'danger');
+                return;
+            }
+            
+            // Show progress section
+            document.getElementById('progressSection').style.display = 'block';
+            document.getElementById('resultsSection').style.display = 'none';
+            document.getElementById('uploadBtn').disabled = true;
+            
+            const formData = new FormData();
+            formData.append('video_file', file);
+            formData.append('max_clips', maxClips);
+            
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.job_id) {
+                    currentJobId = data.job_id;
+                    startStatusCheck();
+                    showAlert('File uploaded and job started successfully!', 'success');
+                } else {
+                    showAlert('Failed to start job: ' + data.error, 'danger');
+                }
+            } catch (error) {
+                showAlert('Error: ' + error.message, 'danger');
+                document.getElementById('uploadBtn').disabled = false;
+            }
+        });
+
+        // Tab switching functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const urlTab = document.getElementById('url-tab');
+            const uploadTab = document.getElementById('upload-tab');
+            const submitBtn = document.getElementById('submitBtn');
+            const uploadBtn = document.getElementById('uploadBtn');
+            
+            urlTab.addEventListener('click', function() {
+                submitBtn.style.display = 'block';
+                uploadBtn.style.display = 'none';
+            });
+            
+            uploadTab.addEventListener('click', function() {
+                submitBtn.style.display = 'none';
+                uploadBtn.style.display = 'block';
+            });
         });
 
         function startStatusCheck() {

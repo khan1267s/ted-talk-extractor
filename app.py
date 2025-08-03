@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size for video uploads
 
 # --- FIX for FileNotFoundError on Windows ---
 # Define absolute paths based on the location of this file (app.py)
@@ -353,6 +353,38 @@ class WebSpeakerExtractor:
         
         return clip_paths
 
+    def process_uploaded_video(self, video_path: str, max_clips: int = 5) -> List[str]:
+        """
+        Process an uploaded video file: analyze and extract clips.
+        
+        Args:
+            video_path: Path to the uploaded video file
+            max_clips: Maximum number of clips to extract (default 5)
+            
+        Returns:
+            List of paths to extracted clip files
+        """
+        logger.info(f"Processing uploaded video: {video_path}")
+        
+        # Find speaker segments
+        segments = self.find_speaker_segments(video_path)
+        
+        if not segments:
+            logger.warning("No valid speaker segments found")
+            return []
+        
+        # Extract clips
+        clip_paths = self.extract_clips(video_path, segments, max_clips)
+        
+        # Clean up uploaded video file after processing
+        try:
+            os.remove(video_path)
+            logger.info("Cleaned up uploaded video")
+        except Exception as e:
+            logger.warning(f"Could not clean up uploaded video file: {e}")
+        
+        return clip_paths
+
 # Initialize the extractor
 extractor = WebSpeakerExtractor()
 
@@ -367,6 +399,33 @@ def process_job(job_id, url, max_clips):
         
         # Process the video
         clip_paths = extractor.process_video(url, max_clips)
+        
+        if clip_paths:
+            jobs[job_id]['status'] = 'completed'
+            jobs[job_id]['progress'] = 100
+            jobs[job_id]['message'] = f'Successfully extracted {len(clip_paths)} clips'
+            jobs[job_id]['clips'] = clip_paths
+            jobs[job_id]['completed_at'] = datetime.now().isoformat()
+        else:
+            jobs[job_id]['status'] = 'failed'
+            jobs[job_id]['message'] = 'No speaker segments found or processing failed'
+            
+    except Exception as e:
+        jobs[job_id]['status'] = 'failed'
+        jobs[job_id]['message'] = f'Error: {str(e)}'
+        logger.error(f"Job {job_id} failed: {e}")
+
+def process_uploaded_job(job_id, file_path, max_clips):
+    """Process an uploaded file job in a separate thread."""
+    global jobs
+    
+    try:
+        jobs[job_id]['status'] = 'processing'
+        jobs[job_id]['progress'] = 0
+        jobs[job_id]['message'] = 'Processing uploaded video...'
+        
+        # Process the uploaded video file directly
+        clip_paths = extractor.process_uploaded_video(file_path, max_clips)
         
         if clip_paths:
             jobs[job_id]['status'] = 'completed'
@@ -425,6 +484,68 @@ def process_video():
         'status': 'queued',
         'message': 'Job started'
     })
+
+@app.route('/api/upload', methods=['POST'])
+def upload_video():
+    """API endpoint to upload and process a video file."""
+    global job_counter
+    
+    # Check if file is present
+    if 'video_file' not in request.files:
+        return jsonify({'error': 'No video file provided'}), 400
+    
+    file = request.files['video_file']
+    max_clips = int(request.form.get('max_clips', 5))
+    
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    # Validate file type
+    allowed_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.webm'}
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in allowed_extensions:
+        return jsonify({'error': f'Unsupported file type: {file_ext}'}), 400
+    
+    try:
+        # Create new job
+        job_counter += 1
+        job_id = f"job_{job_counter}"
+        
+        # Save uploaded file
+        filename = secure_filename(file.filename)
+        # Add timestamp to avoid conflicts
+        timestamp = int(time.time())
+        saved_filename = f"{timestamp}_{filename}"
+        file_path = DOWNLOADS_DIR / saved_filename
+        
+        file.save(str(file_path))
+        logger.info(f"File uploaded: {file_path}")
+        
+        jobs[job_id] = {
+            'id': job_id,
+            'url': f"uploaded:{saved_filename}",
+            'max_clips': max_clips,
+            'status': 'queued',
+            'progress': 0,
+            'message': 'File uploaded, job queued',
+            'created_at': datetime.now().isoformat(),
+            'clips': []
+        }
+        
+        # Start processing in background thread with uploaded file
+        thread = threading.Thread(target=process_uploaded_job, args=(job_id, str(file_path), max_clips))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({
+            'job_id': job_id,
+            'status': 'queued',
+            'message': 'File uploaded and job started'
+        })
+        
+    except Exception as e:
+        logger.error(f"Upload error: {e}")
+        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
 
 @app.route('/api/job/<job_id>')
 def get_job_status(job_id):
