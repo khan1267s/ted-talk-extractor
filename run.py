@@ -3,6 +3,12 @@ import subprocess
 
 # Get the port from the environment variable, default to 5000 if not found
 port = os.environ.get("PORT", "5000")
+print(f"DEBUG: PORT environment variable value: {port}")
+
+# If the port is not a digit, print an error and exit
+if not port.isdigit():
+    print(f"ERROR: The PORT environment variable is not a valid number: {port}")
+    exit(1)
 
 # Construct the Gunicorn command
 command = [
