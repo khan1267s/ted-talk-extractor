@@ -79,6 +79,13 @@ class WebSpeakerExtractor:
                 'quiet': True,
                 'no_warnings': True,
             }
+
+            # Check for a proxy URL from environment variables
+            proxy_url = os.environ.get('PROXY_URL')
+            if proxy_url:
+                logger.info(f"Using proxy: {proxy_url}")
+                ydl_opts['proxy'] = proxy_url
+
             # --- End of quality improvement ---
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
