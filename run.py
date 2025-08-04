@@ -10,11 +10,13 @@ if not port.isdigit():
     print(f"ERROR: The PORT environment variable is not a valid number: {port}")
     exit(1)
 
-# Construct the Gunicorn command
+# Construct the Gunicorn command with an increased timeout
 command = [
     "gunicorn",
     "--bind",
     f"0.0.0.0:{port}",
+    "--timeout",
+    "300",  # 5-minute timeout for long-running video processing
     "app:app",
 ]
 
@@ -26,4 +28,3 @@ except FileNotFoundError:
     print("Please make sure gunicorn is installed in your virtual environment.")
 except subprocess.CalledProcessError as e:
     print(f"Gunicorn failed to start with error: {e}")
-

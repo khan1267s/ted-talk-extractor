@@ -89,21 +89,43 @@ class WebSpeakerExtractor:
             # --- End of quality improvement ---
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
+                info = ydl.extract_info(url, download=False)  # Get info first
                 video_id = info['id']
-                video_path = downloads_dir / f"{video_id}.mp4"
+                file_path = downloads_dir / f"{video_id}.mp4"
+
+                # Get expected file size
+                expected_filesize = 0
+                for f in info['formats']:
+                    if f['format_id'] == info['format_id']:
+                        expected_filesize = f.get('filesize') or f.get('filesize_approx')
+                        break
                 
-                if video_path.exists():
-                    logger.info(f"Video downloaded successfully: {video_path}")
-                    return str(video_path)
-                else:
-                    logger.error("Video file not found after download")
+                logger.info(f"Expected file size: {expected_filesize} bytes")
+
+                # Start download
+                ydl.download([url])
+
+                # --- FILE INTEGRITY CHECK ---
+                if not file_path.exists():
+                    logger.error("Video file not found after download.")
                     return None
-            
+                
+                actual_filesize = file_path.stat().st_size
+                logger.info(f"Actual file size: {actual_filesize} bytes")
+                
+                if expected_filesize and actual_filesize < expected_filesize * 0.9:
+                    logger.error(f"Incomplete download. Expected ~{expected_filesize}, got {actual_filesize}")
+                    os.remove(file_path) # Clean up partial file
+                    return None
+                
+                logger.info(f"Video downloaded successfully: {file_path}")
+                return str(file_path)
+                # --- END FILE INTEGRITY CHECK ---
+
         except Exception as e:
             logger.error(f"Error downloading video: {e}")
             return None
-    
+
     def check_speaker_frame(self, frame: np.ndarray) -> bool:
         """
         Fast check for speaker-only frames.
@@ -154,14 +176,18 @@ class WebSpeakerExtractor:
         logger.info(f"Finding speaker segments in: {video_path}")
         
         cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            logger.error(f"Could not open video file: {video_path}")
+            return []
+
         fps = cap.get(cv2.CAP_PROP_FPS)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps
         
         logger.info(f"Video duration: {duration:.2f} seconds, FPS: {fps:.2f}")
         
-        # Sample frames every 4 seconds for efficiency
-        sample_interval = 4
+        # Sample frames every 2 seconds for more granular analysis
+        sample_interval = 2
         frame_interval = int(fps * sample_interval)
         
         good_frames = []
@@ -187,7 +213,7 @@ class WebSpeakerExtractor:
     def frames_to_segments(self, good_frames: List[int], fps: float, duration: float) -> List[Tuple[float, float]]:
         """
         Convert list of good frame numbers to time segments.
-        Ensures segments don't overlap by requiring minimum gap between them.
+        This version is more tolerant of small gaps (e.g., brief audience shots).
         
         Args:
             good_frames: List of frame numbers that are speaker-only
@@ -199,52 +225,30 @@ class WebSpeakerExtractor:
         """
         if not good_frames:
             return []
-        
+
         segments = []
-        if good_frames: # Check if list is not empty
-            start_frame = good_frames[0]
-            sample_interval = 4  # seconds
-            frame_interval = int(fps * sample_interval)
-            
-            # Minimum gap between segments (in frames) to prevent overlap
-            min_gap_frames = int(fps * 5)  # 5 second minimum gap
-            
-            for i in range(1, len(good_frames)):
-                # If gap is too large, end current segment
-                if good_frames[i] - good_frames[i-1] > frame_interval + 1:
-                    end_frame = good_frames[i-1]
-                    start_time = start_frame / fps
-                    end_time = end_frame / fps
-                    
-                    # Only keep segments that are at least 30 seconds
-                    if end_time - start_time >= 30:
-                        segments.append((start_time, end_time))
-                    
-                    start_frame = good_frames[i]
-            
-            # Handle the last segment
-            end_frame = good_frames[-1]
-            start_time = start_frame / fps
-            end_time = end_frame / fps
-            
-            if end_time - start_time >= 30:
-                segments.append((start_time, end_time))
-        
-        # Filter out overlapping segments
-        non_overlapping_segments = []
-        for i, (start_time, end_time) in enumerate(segments):
-            # Check if this segment overlaps with any previous segment
-            overlaps = False
-            for prev_start, prev_end in non_overlapping_segments:
-                # Check if segments overlap (with 5 second buffer)
-                if (start_time < prev_end + 5 and end_time > prev_start - 5):
-                    overlaps = True
-                    break
-            
-            if not overlaps:
-                non_overlapping_segments.append((start_time, end_time))
-        
-        return non_overlapping_segments
+        if not good_frames:
+            return segments
+
+        start_frame = good_frames[0]
+        max_gap_seconds = 10  # Allow up to a 10-second gap
+        max_gap_frames = int(fps * max_gap_seconds)
+        min_segment_duration = 20 # Minimum length of a valid segment
+
+        for i in range(1, len(good_frames)):
+            gap = good_frames[i] - good_frames[i - 1]
+            if gap > max_gap_frames:
+                end_frame = good_frames[i - 1]
+                if (end_frame - start_frame) / fps >= min_segment_duration:
+                    segments.append((start_frame / fps, end_frame / fps))
+                start_frame = good_frames[i]
+
+        # Add the last segment
+        end_frame = good_frames[-1]
+        if (end_frame - start_frame) / fps >= min_segment_duration:
+            segments.append((start_frame / fps, end_frame / fps))
+
+        return segments
     
     def extract_clips(self, video_path: str, segments: List[Tuple[float, float]], max_clips: int = 5) -> List[str]:
         """
@@ -262,59 +266,69 @@ class WebSpeakerExtractor:
         logger.info(f"Extracting clips from {len(segments)} segments...")
         
         clip_paths = []
-        video = VideoFileClip(video_path)
+        try:
+            video = VideoFileClip(video_path)
+        except Exception as e:
+            logger.error(f"Failed to load video file with MoviePy: {e}")
+            return []
         
-        # Sort segments by duration (longest first) and limit to max_clips
-        segments = sorted(segments, key=lambda x: x[1] - x[0], reverse=True)[:max_clips]
+        # Sort segments by duration (longest first)
+        segments = sorted(segments, key=lambda x: x[1] - x[0], reverse=True)
         
         # Track used time ranges to prevent overlap
-        used_ranges = []
+        used_time_ranges = []
         clip_duration = 30  # seconds
         
         for i, (start_time, end_time) in enumerate(segments):
+            if len(clip_paths) >= max_clips:
+                break
+
+            segment_duration = end_time - start_time
+            if segment_duration < clip_duration:
+                continue
+
+            # Find a 30-second slot within this segment that doesn't overlap with used clips
+            clip_start = start_time
+            
+            # Check for overlap
+            is_overlapping = False
+            for used_start, used_end in used_time_ranges:
+                if max(clip_start, used_start) < min(clip_start + clip_duration, used_end):
+                    is_overlapping = True
+                    break
+            
+            if is_overlapping:
+                continue
+
             try:
-                # Check if this segment overlaps with any previously used range
-                overlaps = False
-                for used_start, used_end in used_ranges:
-                    # Check if segments overlap (with 2 second buffer)
-                    if (start_time < used_end + 2 and start_time + clip_duration > used_start - 2):
-                        overlaps = True
-                        break
-                
-                if overlaps:
-                    logger.info(f"Skipping segment {i+1} due to overlap")
-                    continue
-                
-                # Extract clip (30 seconds max)
-                actual_duration = min(clip_duration, end_time - start_time)
-                clip = video.subclip(start_time, start_time + actual_duration)
+                # Extract the 30-second clip
+                clip = video.subclip(clip_start, clip_start + clip_duration)
                 
                 # Generate output filename
                 video_name = Path(video_path).stem
                 clip_filename = f"{video_name}_speaker_{len(clip_paths)+1:03d}.mp4"
                 clip_path = self.output_dir / clip_filename
                 
-                # --- QUALITY IMPROVEMENT ---
                 # Use a better preset for higher quality encoding
                 clip.write_videofile(
                     str(clip_path),
                     codec='libx264',
                     audio_codec='aac',
-                    preset='slow', # Better quality preset
-                    ffmpeg_params=['-crf', '18'] # Lower CRF means better quality
+                    preset='medium', # Faster preset
+                    threads=4,
+                    logger=None
                 )
-                # --- End of quality improvement ---
                 
                 clip_paths.append(str(clip_path))
-                used_ranges.append((start_time, start_time + actual_duration))
-                logger.info(f"Extracted clip {len(clip_paths)}: {clip_filename} (time: {start_time:.1f}s - {start_time + actual_duration:.1f}s)")
-                
+                used_time_ranges.append((clip_start, clip_start + clip_duration))
+                logger.info(f"Extracted clip {len(clip_paths)}: {clip_filename} (time: {clip_start:.1f}s - {clip_start + clip_duration:.1f}s)")
+
             except Exception as e:
                 logger.error(f"Error extracting clip {i+1}: {e}")
-        
+
         video.close()
         return clip_paths
-    
+
     def process_video(self, url: str, max_clips: int = 5) -> List[str]:
         """
         Process a single video: download, analyze, and extract clips.
@@ -406,7 +420,7 @@ def process_job(job_id, url, max_clips):
         
         if not video_path:
             jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['message'] = 'Failed to download video'
+            jobs[job_id]['message'] = 'Failed to download video. It may be incomplete or blocked.'
             return
         
         # Step 3: Analyze video
@@ -416,252 +430,192 @@ def process_job(job_id, url, max_clips):
         
         if not segments:
             jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['message'] = 'No valid speaker segments found'
+            jobs[job_id]['message'] = 'No speaker segments found. The video may not be suitable.'
+            try:
+                os.remove(video_path)
+            except:
+                pass
             return
-        
+
         # Step 4: Extract clips
         jobs[job_id]['progress'] = 60
-        jobs[job_id]['message'] = f'Extracting {min(len(segments), max_clips)} clips...'
+        jobs[job_id]['message'] = 'Extracting speaker clips...'
         clip_paths = extractor.extract_clips(video_path, segments, max_clips)
-        
-        # Step 5: Finalize
-        jobs[job_id]['progress'] = 90
-        jobs[job_id]['message'] = 'Finalizing clips...'
-        
-        # Clean up
+
+        # Final step: Clean up
         try:
             os.remove(video_path)
-        except:
-            pass
-        
-        if clip_paths:
-            jobs[job_id]['status'] = 'completed'
-            jobs[job_id]['progress'] = 100
-            jobs[job_id]['message'] = f'Successfully extracted {len(clip_paths)} clips'
-            jobs[job_id]['clips'] = clip_paths
-            jobs[job_id]['completed_at'] = datetime.now().isoformat()
-        else:
-            jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['message'] = 'No clips could be extracted'
+            logger.info(f"Cleaned up source video: {video_path}")
+        except Exception as e:
+            logger.warning(f"Could not clean up source video: {e}")
             
+        if not clip_paths:
+            jobs[job_id]['status'] = 'failed'
+            jobs[job_id]['message'] = 'Could not extract any clips after processing.'
+            return
+            
+        jobs[job_id]['status'] = 'completed'
+        jobs[job_id]['progress'] = 100
+        jobs[job_id]['message'] = 'Processing complete!'
+        jobs[job_id]['result'] = [str(Path(p).name) for p in clip_paths]
+
     except Exception as e:
+        logger.error(f"Error in job {job_id}: {e}")
         jobs[job_id]['status'] = 'failed'
-        jobs[job_id]['message'] = f'Error: {str(e)}'
-        logger.error(f"Job {job_id} failed: {e}")
+        jobs[job_id]['message'] = f'An unexpected error occurred: {e}'
+
 
 def process_uploaded_job(job_id, file_path, max_clips):
-    """Process an uploaded file job in a separate thread."""
+    """Process an uploaded video job in a separate thread."""
     global jobs
-    
+
     try:
         # Step 1: Initialize
         jobs[job_id]['status'] = 'processing'
-        jobs[job_id]['progress'] = 0
-        jobs[job_id]['message'] = 'Initializing video processing...'
-        time.sleep(1)  # Brief pause for UI update
-        
-        # Step 2: Validate file
-        jobs[job_id]['progress'] = 20
-        jobs[job_id]['message'] = 'Validating uploaded video...'
-        
-        # Step 3: Analyze video
-        jobs[job_id]['progress'] = 40
-        jobs[job_id]['message'] = 'Analyzing video for speaker segments...'
+        jobs[job_id]['progress'] = 5
+        jobs[job_id]['message'] = 'Validating uploaded file...'
+        time.sleep(1)
+
+        # Step 2: Analyze video
+        jobs[job_id]['progress'] = 30
+        jobs[job_id]['message'] = 'Analyzing video structure...'
         segments = extractor.find_speaker_segments(file_path)
-        
+
         if not segments:
             jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['message'] = 'No valid speaker segments found in uploaded video'
+            jobs[job_id]['message'] = 'No speaker segments found in the uploaded video.'
+            try:
+                os.remove(file_path)
+            except:
+                pass
             return
-        
-        # Step 4: Extract clips
-        jobs[job_id]['progress'] = 70
-        jobs[job_id]['message'] = f'Extracting {min(len(segments), max_clips)} clips...'
+
+        # Step 3: Extract clips
+        jobs[job_id]['progress'] = 60
+        jobs[job_id]['message'] = 'Extracting speaker clips...'
         clip_paths = extractor.extract_clips(file_path, segments, max_clips)
-        
-        # Step 5: Finalize
-        jobs[job_id]['progress'] = 90
-        jobs[job_id]['message'] = 'Finalizing clips and cleaning up...'
-        
-        # Clean up uploaded file
+
+        # Final step: Clean up uploaded file
         try:
             os.remove(file_path)
-        except:
-            pass
-        
-        if clip_paths:
-            jobs[job_id]['status'] = 'completed'
-            jobs[job_id]['progress'] = 100
-            jobs[job_id]['message'] = f'Successfully extracted {len(clip_paths)} clips'
-            jobs[job_id]['clips'] = clip_paths
-            jobs[job_id]['completed_at'] = datetime.now().isoformat()
-        else:
+            logger.info(f"Cleaned up uploaded file: {file_path}")
+        except Exception as e:
+            logger.warning(f"Could not clean up uploaded file: {e}")
+
+        if not clip_paths:
             jobs[job_id]['status'] = 'failed'
-            jobs[job_id]['message'] = 'No clips could be extracted from uploaded video'
-            
+            jobs[job_id]['message'] = 'Could not extract any clips from the uploaded video.'
+            return
+
+        jobs[job_id]['status'] = 'completed'
+        jobs[job_id]['progress'] = 100
+        jobs[job_id]['message'] = 'Processing complete!'
+        jobs[job_id]['result'] = [str(Path(p).name) for p in clip_paths]
+
     except Exception as e:
+        logger.error(f"Error in uploaded job {job_id}: {e}")
         jobs[job_id]['status'] = 'failed'
-        jobs[job_id]['message'] = f'Error: {str(e)}'
-        logger.error(f"Job {job_id} failed: {e}")
+        jobs[job_id]['message'] = f'An unexpected error occurred: {e}'
+
 
 @app.route('/')
 def index():
-    """Main page."""
     return render_template('index.html')
 
 @app.route('/api/process', methods=['POST'])
-def process_video():
-    """API endpoint to process a video."""
+def process_video_route():
     global job_counter
-    
-    data = request.get_json()
-    url = data.get('url')
-    max_clips = data.get('max_clips', 5)
-    
+    url = request.json.get('url')
     if not url:
         return jsonify({'error': 'URL is required'}), 400
-    
-    # Create new job
+
     job_counter += 1
     job_id = f"job_{job_counter}"
     
     jobs[job_id] = {
         'id': job_id,
-        'url': url,
-        'max_clips': max_clips,
         'status': 'queued',
         'progress': 0,
-        'message': 'Job queued',
-        'created_at': datetime.now().isoformat(),
-        'clips': []
+        'message': 'Waiting to start...',
+        'result': [],
+        'start_time': time.time()
     }
-    
-    # Start processing in background thread
-    thread = threading.Thread(target=process_job, args=(job_id, url, max_clips))
-    thread.daemon = True
+
+    # Start the processing in a background thread
+    thread = threading.Thread(target=process_job, args=(job_id, url, 5))
     thread.start()
-    
-    return jsonify({
-        'job_id': job_id,
-        'status': 'queued',
-        'message': 'Job started'
-    })
+
+    return jsonify({'job_id': job_id})
 
 @app.route('/api/upload', methods=['POST'])
 def upload_video():
-    """API endpoint to upload and process a video file."""
     global job_counter
-    
-    # Check if file is present
-    if 'video_file' not in request.files:
-        return jsonify({'error': 'No video file provided'}), 400
-    
-    file = request.files['video_file']
-    max_clips = int(request.form.get('max_clips', 5))
-    
+    if 'videoFile' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+        
+    file = request.files['videoFile']
     if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
+        return jsonify({'error': 'No selected file'}), 400
+
     # Validate file type
-    allowed_extensions = {'.mp4', '.avi', '.mov', '.mkv', '.webm'}
-    file_ext = Path(file.filename).suffix.lower()
-    if file_ext not in allowed_extensions:
-        return jsonify({'error': f'Unsupported file type: {file_ext}'}), 400
-    
-    try:
-        # Create new job
+    if file and file.filename.lower().endswith(('.mp4', '.mov', '.avi', '.mkv')):
+        filename = secure_filename(file.filename)
+        # Save to the absolute path
+        file_path = DOWNLOADS_DIR / filename
+        file.save(str(file_path))
+        
         job_counter += 1
         job_id = f"job_{job_counter}"
         
-        # Save uploaded file
-        filename = secure_filename(file.filename)
-        # Add timestamp to avoid conflicts
-        timestamp = int(time.time())
-        saved_filename = f"{timestamp}_{filename}"
-        file_path = DOWNLOADS_DIR / saved_filename
-        
-        file.save(str(file_path))
-        logger.info(f"File uploaded: {file_path}")
-        
         jobs[job_id] = {
             'id': job_id,
-            'url': f"uploaded:{saved_filename}",
-            'max_clips': max_clips,
             'status': 'queued',
             'progress': 0,
-            'message': 'File uploaded, job queued',
-            'created_at': datetime.now().isoformat(),
-            'clips': []
+            'message': 'File uploaded, waiting to process...',
+            'result': [],
+            'start_time': time.time()
         }
-        
-        # Start processing in background thread with uploaded file
-        thread = threading.Thread(target=process_uploaded_job, args=(job_id, str(file_path), max_clips))
-        thread.daemon = True
+
+        # Start processing in a background thread
+        thread = threading.Thread(target=process_uploaded_job, args=(job_id, str(file_path), 5))
         thread.start()
         
-        return jsonify({
-            'job_id': job_id,
-            'status': 'queued',
-            'message': 'File uploaded and job started'
-        })
-        
-    except Exception as e:
-        logger.error(f"Upload error: {e}")
-        return jsonify({'error': f'Upload failed: {str(e)}'}), 500
+        return jsonify({'job_id': job_id})
+
+    return jsonify({'error': 'Invalid file type'}), 400
+
 
 @app.route('/api/job/<job_id>')
 def get_job_status(job_id):
-    """Get job status."""
-    if job_id not in jobs:
-        return jsonify({'error': 'Job not found'}), 404
-    
-    job = jobs[job_id]
-    
-    # Convert clip paths to URLs for download
-    clips = []
-    for clip_path in job.get('clips', []):
-        clip_name = Path(clip_path).name
-        clips.append({
-            'name': clip_name,
-            'url': url_for('download_clip', filename=clip_name)
-        })
-    
-    return jsonify({
-        'id': job['id'],
-        'status': job['status'],
-        'progress': job['progress'],
-        'message': job['message'],
-        'clips': clips,
-        'created_at': job['created_at'],
-        'completed_at': job.get('completed_at')
-    })
+    job = jobs.get(job_id)
+    if job:
+        # Calculate time elapsed
+        elapsed = time.time() - job.get('start_time', time.time())
+        job['time_elapsed'] = f"{int(elapsed // 60):02d}:{int(elapsed % 60):02d}"
+        return jsonify(job)
+    return jsonify({'error': 'Job not found'}), 404
 
 @app.route('/download/<filename>')
 def download_clip(filename):
-    """Download a clip file."""
-    clip_path = CLIPS_DIR / filename # Use absolute path
-    if clip_path.exists():
-        return send_file(clip_path, as_attachment=True)
-    else:
-        logger.error(f"File not found for download: {clip_path}")
-        return jsonify({'error': 'File not found'}), 404
+    """
+    Serve a file for download.
+    The filename is relative to the CLIPS_DIR.
+    """
+    # Use the absolute path for sending the file
+    file_path = CLIPS_DIR / filename
+    if file_path.exists():
+        return send_file(
+            str(file_path),
+            as_attachment=True,
+            mimetype='video/mp4'
+        )
+    return "File not found.", 404
 
 @app.route('/api/jobs')
 def list_jobs():
-    """List all jobs."""
-    job_list = []
-    for job_id, job in jobs.items():
-        job_list.append({
-            'id': job['id'],
-            'url': job['url'],
-            'status': job['status'],
-            'progress': job['progress'],
-            'message': job['message'],
-            'created_at': job['created_at'],
-            'completed_at': job.get('completed_at')
-        })
-    
-    return jsonify(job_list)
+    return jsonify(list(jobs.values()))
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # Use 0.0.0.0 to make it accessible on the network
+    # Debug mode is off for production-like environment
+    app.run(host='0.0.0.0', port=5000, debug=False)

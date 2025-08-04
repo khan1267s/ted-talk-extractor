@@ -1,0 +1,15 @@
+# Ignore Python cache and virtual environments
+__pycache__/
+*.pyc
+.env
+venv/
+
+# Ignore downloaded videos
+downloads/
+
+# Ignore extracted clips
+static/clips/
+output_clips/
+
+# Ignore test output
+test_output/
