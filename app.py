@@ -216,8 +216,8 @@ class WebSpeakerExtractor:
                     start_time = start_frame / fps
                     end_time = end_frame / fps
                     
-                    # Only keep segments that are at least 20 seconds
-                    if end_time - start_time >= 20:
+                    # Only keep segments that are at least 30 seconds
+                    if end_time - start_time >= 30:
                         segments.append((start_time, end_time))
                     
                     start_frame = good_frames[i]
@@ -227,7 +227,7 @@ class WebSpeakerExtractor:
             start_time = start_frame / fps
             end_time = end_frame / fps
             
-            if end_time - start_time >= 20:
+            if end_time - start_time >= 30:
                 segments.append((start_time, end_time))
         
         # Filter out overlapping segments

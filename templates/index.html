@@ -275,6 +275,12 @@
             margin: 0.5rem 0;
             border-left: 4px solid #667eea;
         }
+
+        .clip-preview video {
+            width: 100%;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
         
         .loading-spinner {
             display: inline-block;
@@ -450,11 +456,11 @@
                                     <div class="card border-0 shadow-sm">
                                         <div class="card-body p-4">
                                             <h5 class="card-title mb-3">
-                                                <i class="fas fa-download me-2"></i>
+                                                <i class="fas fa-check-circle me-2 text-success"></i>
                                                 Extracted Clips
                                             </h5>
                                             
-                                            <div id="clipsList">
+                                            <div id="clipsList" class="row">
                                                 <!-- Clips will be added here -->
                                             </div>
                                         </div>
@@ -741,23 +747,31 @@
             if (job.clips && job.clips.length > 0) {
                 job.clips.forEach((clip, index) => {
                     const clipElement = document.createElement('div');
-                    clipElement.className = 'clip-item';
+                    clipElement.className = 'col-lg-6 mb-4'; // Display 2 clips per row on larger screens
                     clipElement.innerHTML = `
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <h6 class="mb-1">Clip ${index + 1}</h6>
-                                <small class="text-muted">${clip.name}</small>
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title">Clip ${index + 1}</h6>
+                                <div class="clip-preview">
+                                    <video controls preload="metadata">
+                                        <source src="${clip.url}" type="video/mp4">
+                                        Your browser does not support the video tag.
+                                    </video>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mt-3">
+                                    <small class="text-muted">${clip.name}</small>
+                                    <a href="${clip.url}" class="btn btn-sm btn-primary" download>
+                                        <i class="fas fa-download me-1"></i>
+                                        Download
+                                    </a>
+                                </div>
                             </div>
-                            <a href="${clip.url}" class="btn btn-sm btn-primary" download>
-                                <i class="fas fa-download me-1"></i>
-                                Download
-                            </a>
                         </div>
                     `;
                     clipsList.appendChild(clipElement);
                 });
             } else {
-                clipsList.innerHTML = '<div class="alert alert-warning">No clips were extracted.</div>';
+                clipsList.innerHTML = '<div class="col-12"><div class="alert alert-warning">No clips were extracted.</div></div>';
             }
         }
 
@@ -815,4 +829,4 @@
         document.addEventListener('DOMContentLoaded', loadRecentJobs);
     </script>
 </body>
-</html> 
+</html>
