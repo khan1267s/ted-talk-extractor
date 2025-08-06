@@ -280,6 +280,7 @@
             width: 100%;
             border-radius: 8px;
             margin-top: 1rem;
+            background: #000;
         }
         
         .loading-spinner {
@@ -405,7 +406,7 @@
                                                 <option value="10">10 clips</option>
                                             </select>
                                             <div class="form-text">
-                                                Number of speaker-only clips to extract (30 seconds each)
+                                                Number of speaker-only clips to extract (25 seconds each)
                                             </div>
                                         </div>
                                         
@@ -490,7 +491,7 @@
                                                     <i class="fas fa-cut"></i>
                                                 </div>
                                                 <h6>Smart Clipping</h6>
-                                                <small class="text-muted">30-second optimized clips</small>
+                                                <small class="text-muted">25-second optimized clips</small>
                                             </div>
                                             <div class="col-6 mb-3">
                                                 <div class="feature-icon">
@@ -560,21 +561,16 @@
                 return;
             }
             
-            // Show progress section
             document.getElementById('progressSection').style.display = 'block';
             document.getElementById('resultsSection').style.display = 'none';
             document.getElementById('submitBtn').disabled = true;
+            document.getElementById('uploadBtn').disabled = true;
             
             try {
                 const response = await fetch('/api/process', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        url: url,
-                        max_clips: maxClips
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url, max_clips: maxClips })
                 });
                 
                 const data = await response.json();
@@ -582,16 +578,19 @@
                 if (data.job_id) {
                     currentJobId = data.job_id;
                     startStatusCheck();
-                    showAlert('Job started successfully!', 'success');
+                    showAlert('Job started successfully!', 'info');
                 } else {
-                    showAlert('Failed to start job: ' + data.error, 'danger');
+                    showAlert('Failed to start job: ' + (data.error || 'Unknown error'), 'danger');
+                    document.getElementById('submitBtn').disabled = false;
+                    document.getElementById('uploadBtn').disabled = false;
                 }
             } catch (error) {
                 showAlert('Error: ' + error.message, 'danger');
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('uploadBtn').disabled = false;
             }
         });
 
-        // File upload form submission
         document.getElementById('uploadForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
@@ -604,20 +603,18 @@
             }
             
             const file = fileInput.files[0];
-            
-            // Check file size (500MB limit)
             if (file.size > 500 * 1024 * 1024) {
-                showAlert('File size must be less than 500MB', 'danger');
+                showAlert('File size exceeds 500MB limit', 'danger');
                 return;
             }
             
-            // Show progress section
             document.getElementById('progressSection').style.display = 'block';
             document.getElementById('resultsSection').style.display = 'none';
+            document.getElementById('submitBtn').disabled = true;
             document.getElementById('uploadBtn').disabled = true;
             
             const formData = new FormData();
-            formData.append('video_file', file);
+            formData.append('videoFile', file);
             formData.append('max_clips', maxClips);
             
             try {
@@ -631,17 +628,20 @@
                 if (data.job_id) {
                     currentJobId = data.job_id;
                     startStatusCheck();
-                    showAlert('File uploaded and job started successfully!', 'success');
+                    showAlert('File uploaded, job started!', 'info');
                 } else {
-                    showAlert('Failed to start job: ' + data.error, 'danger');
+                    showAlert('Failed to start job: ' + (data.error || 'Unknown error'), 'danger');
+                    document.getElementById('submitBtn').disabled = false;
+                    document.getElementById('uploadBtn').disabled = false;
                 }
             } catch (error) {
                 showAlert('Error: ' + error.message, 'danger');
+                document.getElementById('submitBtn').disabled = false;
                 document.getElementById('uploadBtn').disabled = false;
             }
         });
 
-        // Tab switching functionality
+        // Tab switching
         document.addEventListener('DOMContentLoaded', function() {
             const urlTab = document.getElementById('url-tab');
             const uploadTab = document.getElementById('upload-tab');
@@ -657,18 +657,16 @@
                 submitBtn.style.display = 'none';
                 uploadBtn.style.display = 'block';
             });
+            // loadRecentJobs(); // Optional: load job history on start
         });
 
-        // Progress tracking variables
         let startTime = null;
 
         function startStatusCheck() {
-            if (statusCheckInterval) {
-                clearInterval(statusCheckInterval);
-            }
-            
+            if (statusCheckInterval) clearInterval(statusCheckInterval);
             startTime = Date.now();
-            statusCheckInterval = setInterval(checkJobStatus, 1000); // More frequent updates
+            updateProgress({ progress: 0, message: 'Initializing...' }); // Initial state
+            statusCheckInterval = setInterval(checkJobStatus, 1000);
         }
 
         async function checkJobStatus() {
@@ -683,6 +681,7 @@
                 if (job.status === 'completed' || job.status === 'failed') {
                     clearInterval(statusCheckInterval);
                     document.getElementById('submitBtn').disabled = false;
+                    document.getElementById('uploadBtn').disabled = false;
                     
                     if (job.status === 'completed') {
                         showResults(job);
@@ -694,46 +693,37 @@
         }
 
         function updateProgress(job) {
-            const progressBar = document.getElementById('progressBar');
-            const progressPercent = document.getElementById('progressPercent');
-            const progressText = document.getElementById('progressText');
-            const statusText = document.getElementById('statusText');
+            const progress = job.progress || 0;
+            const message = job.message || 'Waiting...';
+            
+            document.getElementById('progressBar').style.width = progress + '%';
+            document.getElementById('progressPercent').textContent = progress + '%';
+            document.getElementById('progressCircle').style.setProperty('--progress', progress + '%');
+            document.getElementById('progressText').textContent = message;
+            
             const statusMessage = document.getElementById('statusMessage');
-            const progressCircle = document.getElementById('progressCircle');
-            const timeElapsed = document.getElementById('timeElapsed');
+            statusMessage.className = 'alert';
+            let iconClass = 'fas fa-info-circle';
+            let alertClass = 'alert-info';
+
+            if (job.status === 'processing') {
+                iconClass = 'fas fa-cogs fa-spin';
+                alertClass = 'alert-primary';
+            } else if (job.status === 'completed') {
+                iconClass = 'fas fa-check-circle';
+                alertClass = 'alert-success';
+            } else if (job.status === 'failed') {
+                iconClass = 'fas fa-exclamation-circle';
+                alertClass = 'alert-danger';
+            }
+            statusMessage.classList.add(alertClass);
+            statusMessage.innerHTML = `<i class="${iconClass} me-2"></i><span>${message}</span>`;
             
-            // Update progress bar and percentage
-            progressBar.style.width = job.progress + '%';
-            progressPercent.textContent = job.progress + '%';
-            progressText.textContent = job.message;
-            statusText.textContent = job.message;
-            
-            // Update circular progress indicator
-            progressCircle.style.setProperty('--progress', job.progress + '%');
-            
-            // Update elapsed time
             if (startTime) {
                 const elapsed = Math.floor((Date.now() - startTime) / 1000);
                 const minutes = Math.floor(elapsed / 60);
                 const seconds = elapsed % 60;
-                if (minutes > 0) {
-                    timeElapsed.textContent = `Time elapsed: ${minutes}m ${seconds}s`;
-                } else {
-                    timeElapsed.textContent = `Time elapsed: ${seconds}s`;
-                }
-            }
-            
-            // Update status message color with better styling
-            statusMessage.className = 'alert';
-            if (job.status === 'processing') {
-                statusMessage.classList.add('alert-info');
-                statusMessage.innerHTML = `<i class="fas fa-cogs fa-spin me-2"></i><span id="statusText">${job.message}</span>`;
-            } else if (job.status === 'completed') {
-                statusMessage.classList.add('alert-success');
-                statusMessage.innerHTML = `<i class="fas fa-check-circle me-2"></i><span id="statusText">${job.message}</span>`;
-            } else if (job.status === 'failed') {
-                statusMessage.classList.add('alert-danger');
-                statusMessage.innerHTML = `<i class="fas fa-exclamation-circle me-2"></i><span id="statusText">${job.message}</span>`;
+                document.getElementById('timeElapsed').textContent = `Time elapsed: ${minutes}m ${seconds}s`;
             }
         }
 
@@ -744,23 +734,23 @@
             resultsSection.style.display = 'block';
             clipsList.innerHTML = '';
             
-            if (job.clips && job.clips.length > 0) {
-                job.clips.forEach((clip, index) => {
+            if (job.result && job.result.length > 0) {
+                job.result.forEach((clip, index) => {
                     const clipElement = document.createElement('div');
-                    clipElement.className = 'col-lg-6 mb-4'; // Display 2 clips per row on larger screens
+                    clipElement.className = 'col-lg-6 mb-4';
                     clipElement.innerHTML = `
-                        <div class="card h-100">
+                        <div class="card h-100 shadow-sm">
                             <div class="card-body">
                                 <h6 class="card-title">Clip ${index + 1}</h6>
-                                <div class="clip-preview">
-                                    <video controls preload="metadata">
+                                <div class="clip-preview mb-3">
+                                    <video controls preload="metadata" class="w-100 rounded">
                                         <source src="${clip.url}" type="video/mp4">
                                         Your browser does not support the video tag.
                                     </video>
                                 </div>
-                                <div class="d-flex justify-content-between align-items-center mt-3">
-                                    <small class="text-muted">${clip.name}</small>
-                                    <a href="${clip.url}" class="btn btn-sm btn-primary" download>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <small class="text-muted text-truncate" style="max-width: 70%;">${clip.name}</small>
+                                    <a href="${clip.url}" class="btn btn-sm btn-outline-primary" download>
                                         <i class="fas fa-download me-1"></i>
                                         Download
                                     </a>
@@ -771,62 +761,23 @@
                     clipsList.appendChild(clipElement);
                 });
             } else {
-                clipsList.innerHTML = '<div class="col-12"><div class="alert alert-warning">No clips were extracted.</div></div>';
+                clipsList.innerHTML = '<div class="col-12"><div class="alert alert-warning">No clips were extracted. Please try a different video.</div></div>';
             }
         }
 
         function showAlert(message, type) {
+            const container = document.querySelector('.form-container');
             const alertDiv = document.createElement('div');
             alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.role = 'alert';
             alertDiv.innerHTML = `
                 ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             `;
-            
-            const container = document.querySelector('.form-container');
             container.insertBefore(alertDiv, container.firstChild);
-            
-            // Auto-dismiss after 5 seconds
-            setTimeout(() => {
-                if (alertDiv.parentNode) {
-                    alertDiv.remove();
-                }
-            }, 5000);
+            setTimeout(() => alertDiv.remove(), 5000);
         }
 
-        // Load recent jobs on page load
-        async function loadRecentJobs() {
-            try {
-                const response = await fetch('/api/jobs');
-                const jobs = await response.json();
-                
-                const jobsList = document.getElementById('jobsList');
-                jobsList.innerHTML = '';
-                
-                jobs.slice(0, 5).forEach(job => {
-                    const jobElement = document.createElement('div');
-                    jobElement.className = 'job-card p-3 mb-2';
-                    jobElement.innerHTML = `
-                        <div class="d-flex justify-content-between align-items-start">
-                            <div class="flex-grow-1">
-                                <h6 class="mb-1">${job.url.substring(0, 30)}...</h6>
-                                <small class="text-muted">${new Date(job.created_at).toLocaleString()}</small>
-                            </div>
-                            <span class="status-badge status-${job.status}">${job.status}</span>
-                        </div>
-                        <div class="mt-2">
-                            <small>${job.message}</small>
-                        </div>
-                    `;
-                    jobsList.appendChild(jobElement);
-                });
-            } catch (error) {
-                console.error('Error loading jobs:', error);
-            }
-        }
-
-        // Load jobs on page load
-        document.addEventListener('DOMContentLoaded', loadRecentJobs);
     </script>
 </body>
 </html>

@@ -1,9 +1,10 @@
 pytube==15.0.0
 moviepy==1.0.3
-opencv-python==4.8.1.78
-mediapipe==0.10.7
-ultralytics==8.0.196
-numpy==1.24.3
-Pillow==10.0.1
-tqdm==4.66.1
-requests==2.31.0 
+opencv-python==4.9.0.80
+ultralytics==8.2.57
+numpy==1.26.4
+Pillow==10.3.0
+tqdm==4.66.4
+requests==2.32.3
+torch==2.3.1
+torchaudio==2.3.1
