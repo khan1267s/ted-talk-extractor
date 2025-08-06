@@ -12,6 +12,7 @@ import logging
 import yt_dlp
 from moviepy.editor import VideoFileClip
 from ultralytics import YOLO
+from progress_tracker import ProgressTracker, MultiStageProgressTracker
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -114,7 +115,7 @@ class TEDTalkProcessor:
             logger.debug(f"Frame check failed: {e}")
             return False
 
-    def find_speaker_segments(self, video_path: str, progress_callback=None) -> List[Tuple[float, float]]:
+    def find_speaker_segments(self, video_path: str, progress_callback=None, verbose_progress: bool = True) -> List[Tuple[float, float]]:
         """Find speaker-only segments."""
         logger.info(f"Finding speaker segments in: {video_path}")
         cap = cv2.VideoCapture(video_path)
@@ -130,8 +131,17 @@ class TEDTalkProcessor:
         sample_interval_seconds = 1
         frame_interval = int(fps * sample_interval_seconds)
         good_frames = []
+        
+        # Create progress tracker for frame analysis
+        sampled_frames = list(range(0, total_frames, frame_interval))
+        frame_tracker = ProgressTracker(
+            len(sampled_frames), 
+            "Analyzing frames for speaker detection",
+            verbose=verbose_progress
+        )
+        frame_tracker.start()
 
-        for frame_idx in range(0, total_frames, frame_interval):
+        for i, frame_idx in enumerate(sampled_frames):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
             ret, frame = cap.read()
             if not ret:
@@ -140,11 +150,16 @@ class TEDTalkProcessor:
             if self.check_speaker_frame(frame):
                 good_frames.append(frame_idx)
             
+            # Update progress tracker
+            time_position = frame_idx / fps
+            frame_tracker.update(i, f"Frame {frame_idx} ({time_position:.1f}s)")
+            
             if progress_callback:
                 progress = int((frame_idx / total_frames) * 100)
                 progress_callback(progress)
         
         cap.release()
+        frame_tracker.complete(f"Found {len(good_frames)} frames with speaker")
         
         if progress_callback:
             progress_callback(100)
@@ -178,7 +193,7 @@ class TEDTalkProcessor:
 
         return segments
 
-    def extract_clips(self, video_path: str, segments: List[Tuple[float, float]], max_clips: int = 5) -> List[str]:
+    def extract_clips(self, video_path: str, segments: List[Tuple[float, float]], max_clips: int = 5, verbose_progress: bool = True) -> List[str]:
         """Extract non-overlapping clips."""
         logger.info(f"Extracting clips from {len(segments)} segments...")
         clip_paths = []
@@ -191,6 +206,14 @@ class TEDTalkProcessor:
         segments = sorted(segments, key=lambda x: x[1] - x[0], reverse=True)
         used_time_ranges = []
         clip_duration = 25
+        
+        # Create progress tracker for clip extraction
+        clip_tracker = ProgressTracker(
+            max_clips,
+            "Extracting speaker clips",
+            verbose=verbose_progress
+        )
+        clip_tracker.start()
 
         for i, (start_time, end_time) in enumerate(segments):
             if len(clip_paths) >= max_clips:
@@ -210,6 +233,9 @@ class TEDTalkProcessor:
                 clip_filename = f"{video_name}_speaker_clip_{len(clip_paths)+1:03d}.mp4"
                 clip_path = self.output_dir / clip_filename
                 
+                # Update progress before extraction
+                clip_tracker.update(len(clip_paths), f"Extracting {clip_filename}")
+                
                 clip.write_videofile(
                     str(clip_path),
                     codec='libx264',
@@ -227,12 +253,25 @@ class TEDTalkProcessor:
                 logger.error(f"Error extracting clip {i+1}: {e}")
 
         video.close()
+        clip_tracker.complete(f"Extracted {len(clip_paths)} clips successfully")
         return clip_paths
 
-    def process_video(self, video_path: str, max_clips: int = 5, from_url: bool = False, progress_callback=None) -> List[str]:
+    def process_video(self, video_path: str, max_clips: int = 5, from_url: bool = False, progress_callback=None, verbose_progress: bool = True) -> List[str]:
         """
         Full processing pipeline for a single video file.
         """
+        # Setup multi-stage progress tracking
+        stages = [
+            {"name": "Download Video" if from_url else "Load Video"},
+            {"name": "Analyze Frames"},
+            {"name": "Extract Clips"}
+        ]
+        
+        multi_tracker = MultiStageProgressTracker(stages, verbose=verbose_progress)
+        multi_tracker.start()
+        
+        # Stage 1: Download/Load video
+        multi_tracker.next_stage()
         if from_url:
             actual_video_path = self.download_video(video_path)
             if not actual_video_path:
@@ -241,15 +280,19 @@ class TEDTalkProcessor:
         else:
             actual_video_path = video_path
 
+        # Stage 2: Find speaker segments
+        multi_tracker.next_stage()
         logger.info(f"Processing video: {actual_video_path}")
-        segments = self.find_speaker_segments(actual_video_path, progress_callback)
+        segments = self.find_speaker_segments(actual_video_path, progress_callback, verbose_progress)
         if not segments:
             logger.warning("No valid speaker segments found")
             if from_url:
                 os.remove(actual_video_path)
             return []
         
-        clip_paths = self.extract_clips(actual_video_path, segments, max_clips)
+        # Stage 3: Extract clips
+        multi_tracker.next_stage()
+        clip_paths = self.extract_clips(actual_video_path, segments, max_clips, verbose_progress)
         
         if from_url:
             try:
@@ -258,19 +301,26 @@ class TEDTalkProcessor:
             except Exception as e:
                 logger.warning(f"Could not clean up video file: {e}")
         
+        multi_tracker.complete()
         return clip_paths
 
-    def process_multiple_videos(self, urls: List[str], max_clips_per_video: int = 5) -> Dict[str, List[str]]:
+    def process_multiple_videos(self, urls: List[str], max_clips_per_video: int = 5, verbose_progress: bool = True) -> Dict[str, List[str]]:
         """
         Process a batch of videos from a list of URLs.
         """
         results = {}
+        batch_tracker = ProgressTracker(len(urls), "Processing videos", verbose=verbose_progress)
+        batch_tracker.start()
+        
         for i, url in enumerate(urls):
             logger.info(f"\nProcessing URL {i+1}/{len(urls)}: {url}")
+            batch_tracker.update(i, f"Processing: {url}")
             try:
-                clip_paths = self.process_video(url, max_clips=max_clips_per_video, from_url=True)
+                clip_paths = self.process_video(url, max_clips=max_clips_per_video, from_url=True, verbose_progress=verbose_progress)
                 results[url] = clip_paths
             except Exception as e:
                 logger.error(f"Failed to process video {url}: {e}")
                 results[url] = []
+        
+        batch_tracker.complete(f"Processed {len(urls)} videos")
         return results

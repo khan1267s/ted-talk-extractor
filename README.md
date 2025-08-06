@@ -10,6 +10,7 @@ A Python tool that downloads TED Talks from YouTube and extracts speaker-only cl
 - **Quality Control**: Excludes clips with audience members, multiple people, or distracting objects
 - **Batch Processing**: Process multiple videos at once
 - **Configurable Output**: Customizable clip duration and maximum number of clips
+- **Enhanced Progress Tracking**: Real-time progress bars with ETA and detailed stage information
 
 ## Requirements
 
@@ -36,27 +37,49 @@ A Python tool that downloads TED Talks from YouTube and extracts speaker-only cl
 
 Process a single TED Talk:
 ```bash
-python ted_processor.py "https://www.youtube.com/watch?v=VIDEO_ID"
+python process_ted_talk.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-Process multiple TED Talks:
+Process multiple TED Talks from a file:
 ```bash
-python ted_processor.py "https://www.youtube.com/watch?v=VIDEO_ID1" "https://www.youtube.com/watch?v=VIDEO_ID2"
+python batch_process.py urls.txt
+```
+
+Disable progress tracking for cleaner logs:
+```bash
+python process_ted_talk.py "https://www.youtube.com/watch?v=VIDEO_ID" --no-progress
 ```
 
 ### Advanced Usage
 
+Single video with options:
 ```bash
-python ted_processor.py "https://www.youtube.com/watch?v=VIDEO_ID" \
+python process_ted_talk.py "https://www.youtube.com/watch?v=VIDEO_ID" \
     --output-dir "my_clips" \
     --max-clips 20
 ```
 
+Batch processing with options:
+```bash
+python batch_process.py urls.txt \
+    --output-dir "batch_clips" \
+    --max-clips 15 \
+    --no-progress
+```
+
 ### Command Line Options
 
-- `urls`: One or more YouTube video URLs (required)
+#### Single Video Processing (`process_ted_talk.py`):
+- `video`: YouTube URL or local video file path (required)
 - `--output-dir`: Output directory for clips (default: "output_clips")
-- `--max-clips`: Maximum number of clips per video (default: 30)
+- `--max-clips`: Maximum number of clips to extract (default: 30)
+- `--no-progress`: Disable verbose progress tracking
+
+#### Batch Processing (`batch_process.py`):
+- `urls_file`: Text file containing YouTube URLs, one per line (required)
+- `--output-dir`: Output directory for clips (default: "batch_output")
+- `--max-clips`: Maximum clips per video (default: 30)
+- `--no-progress`: Disable verbose progress tracking
 
 ## How It Works
 

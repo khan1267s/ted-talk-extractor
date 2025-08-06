@@ -5,6 +5,7 @@ Reads URLs from a file and processes them in batches.
 """
 
 import sys
+import argparse
 from pathlib import Path
 from ted_processor import TEDTalkProcessor
 
@@ -26,14 +27,29 @@ def read_urls_from_file(filename: str) -> list:
 def main():
     """Main function for batch processing."""
     
-    if len(sys.argv) < 2:
-        print("Usage: python batch_process.py <urls_file> [output_dir] [max_clips]")
-        print("Example: python batch_process.py urls.txt my_clips 20")
-        sys.exit(1)
+    # Set up argument parser
+    parser = argparse.ArgumentParser(
+        description="Batch process TED Talk videos to extract speaker-only clips",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python batch_process.py urls.txt
+  python batch_process.py urls.txt --output-dir my_clips --max-clips 20
+  python batch_process.py urls.txt --no-progress
+        """
+    )
     
-    urls_file = sys.argv[1]
-    output_dir = sys.argv[2] if len(sys.argv) > 2 else "batch_output"
-    max_clips = int(sys.argv[3]) if len(sys.argv) > 3 else 30
+    parser.add_argument('urls_file', help='Text file containing YouTube URLs (one per line)')
+    parser.add_argument('--output-dir', default='batch_output', help='Directory to save clips (default: batch_output)')
+    parser.add_argument('--max-clips', type=int, default=30, help='Maximum clips per video (default: 30)')
+    parser.add_argument('--no-progress', action='store_true', help='Disable verbose progress tracking')
+    
+    args = parser.parse_args()
+    
+    urls_file = args.urls_file
+    output_dir = args.output_dir
+    max_clips = args.max_clips
+    verbose_progress = not args.no_progress
     
     # Read URLs from file
     urls = read_urls_from_file(urls_file)
@@ -45,13 +61,14 @@ def main():
     print(f"Found {len(urls)} URLs to process")
     print(f"Output directory: {output_dir}")
     print(f"Max clips per video: {max_clips}")
+    print(f"Progress tracking: {'Enabled' if verbose_progress else 'Disabled'}")
     
     # Initialize processor
     processor = TEDTalkProcessor(output_dir=output_dir)
     
     # Process videos
     print("\nStarting batch processing...")
-    results = processor.process_multiple_videos(urls, max_clips_per_video=max_clips)
+    results = processor.process_multiple_videos(urls, max_clips_per_video=max_clips, verbose_progress=verbose_progress)
     
     # Print summary
     print("\n" + "="*50)
