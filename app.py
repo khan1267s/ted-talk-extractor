@@ -13,7 +13,6 @@ from typing import List, Tuple, Optional
 import logging
 import json
 import time
-import threading
 from datetime import datetime
 
 # Web framework
@@ -218,17 +217,13 @@ def process_video_route():
     job_id = f"job_{job_counter}_{int(time.time())}"
     jobs[job_id] = {'id': job_id, 'status': 'queued', 'progress': 0, 'message': 'Starting job...', 'result': [], 'start_time': time.time()}
     
-    def download_and_process():
-        jobs[job_id].update({'status': 'processing', 'progress': 10, 'message': 'Downloading video...'})
-        video_path = extractor.download_video(url)
-        if not video_path:
-            jobs[job_id].update({'status': 'failed', 'message': 'Failed to download video.'})
-            return
-        run_processing(job_id, video_path, max_clips)
+    jobs[job_id].update({'status': 'processing', 'progress': 10, 'message': 'Downloading video...'})
+    video_path = extractor.download_video(url)
+    if not video_path:
+        jobs[job_id].update({'status': 'failed', 'message': 'Failed to download video.'})
+        return jsonify({'job_id': job_id})
     
-    thread = threading.Thread(target=download_and_process)
-    thread.daemon = True
-    thread.start()
+    run_processing(job_id, video_path, max_clips)
     return jsonify({'job_id': job_id})
 
 @app.route('/api/upload', methods=['POST'])
@@ -249,9 +244,7 @@ def upload_video():
         job_id = f"job_{job_counter}_{int(time.time())}"
         jobs[job_id] = {'id': job_id, 'status': 'queued', 'progress': 0, 'message': 'File uploaded, starting job...', 'result': [], 'start_time': time.time()}
 
-        thread = threading.Thread(target=run_processing, args=(job_id, str(file_path), max_clips))
-        thread.daemon = True
-        thread.start()
+        run_processing(job_id, str(file_path), max_clips)
         
         return jsonify({'job_id': job_id})
     
