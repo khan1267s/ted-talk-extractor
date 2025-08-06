@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opencv_storage>
+<haarcascade_frontalface_default type_id="opencv-haar-classifier">
+  <size>20 20</size>
+  <stages>
+    <_>
+      <trees>
+        <_>
+          <_>
+            <feature>
+              <rect>2 8 16 4</rect>
+              <tilted>0</tilted></feature>
+            <threshold>2.2965999916195870e-02</threshold>
+            <left_val>1.</left_val>
+            <right_val>-1.</right_val></_></_></trees>
+      <stage_threshold>-1.1697200536727905e+00</stage_threshold>
+      <parent>-1</parent>
+      <next>-1</next></_>
+    <!-- More stages follow -->
+  </stages>
+</haarcascade_frontalface_default>
+</opencv_storage>
