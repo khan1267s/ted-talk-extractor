@@ -1,14 +1,13 @@
 # TED Talk Processor
 
-A Python tool that downloads TED Talks from YouTube and extracts speaker-only clips using advanced computer vision techniques.
+A Python tool that processes TED Talk videos (uploaded files or YouTube URLs) and extracts speaker-only clips using advanced computer vision techniques.
 
 ## Features
 
-- **YouTube Download**: Downloads TED Talks using pytube
-- **Person Detection**: Uses multiple AI models (YOLOv8, MediaPipe) to detect people in video frames
+- **Flexible Input**: Process uploaded video files or download from YouTube URLs
+- **Person Detection**: Uses advanced AI models (YOLOv8, MediaPipe) to detect people in video frames
 - **Speaker-Only Filtering**: Extracts clips containing only the main speaker
 - **Quality Control**: Excludes clips with audience members, multiple people, or distracting objects
-- **Batch Processing**: Process multiple videos at once
 - **Configurable Output**: Customizable clip duration and maximum number of clips
 - **Enhanced Progress Tracking**: Real-time progress bars with ETA and detailed stage information
 
@@ -35,57 +34,51 @@ A Python tool that downloads TED Talks from YouTube and extracts speaker-only cl
 
 ### Basic Usage
 
-Process a single TED Talk:
+Process an uploaded video file:
+```bash
+python process_ted_talk.py video.mp4
+python process_ted_talk.py /path/to/uploaded_video.mp4
+```
+
+Process a TED Talk from YouTube:
 ```bash
 python process_ted_talk.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-Process multiple TED Talks from a file:
-```bash
-python batch_process.py urls.txt
-```
-
 Disable progress tracking for cleaner logs:
 ```bash
-python process_ted_talk.py "https://www.youtube.com/watch?v=VIDEO_ID" --no-progress
+python process_ted_talk.py video.mp4 --no-progress
 ```
 
 ### Advanced Usage
 
-Single video with options:
+Process with custom options:
 ```bash
-python process_ted_talk.py "https://www.youtube.com/watch?v=VIDEO_ID" \
+# Uploaded video with custom output
+python process_ted_talk.py uploaded_ted_talk.mp4 \
     --output-dir "my_clips" \
     --max-clips 20
-```
 
-Batch processing with options:
-```bash
-python batch_process.py urls.txt \
-    --output-dir "batch_clips" \
+# YouTube URL with options
+python process_ted_talk.py "https://www.youtube.com/watch?v=VIDEO_ID" \
+    --output-dir "youtube_clips" \
     --max-clips 15 \
     --no-progress
 ```
 
 ### Command Line Options
 
-#### Single Video Processing (`process_ted_talk.py`):
-- `video`: YouTube URL or local video file path (required)
+- `video`: Local video file path or YouTube URL (required)
 - `--output-dir`: Output directory for clips (default: "output_clips")
 - `--max-clips`: Maximum number of clips to extract (default: 30)
 - `--no-progress`: Disable verbose progress tracking
 
-#### Batch Processing (`batch_process.py`):
-- `urls_file`: Text file containing YouTube URLs, one per line (required)
-- `--output-dir`: Output directory for clips (default: "batch_output")
-- `--max-clips`: Maximum clips per video (default: 30)
-- `--no-progress`: Disable verbose progress tracking
-
 ## How It Works
 
-### 1. Video Download
-- Uses pytube to download the highest quality available stream
-- Saves temporarily in `downloads/` directory
+### 1. Video Input
+- Accepts uploaded video files directly (MP4, AVI, MOV, etc.)
+- Can download from YouTube URLs using yt-dlp
+- Downloaded videos are temporarily stored and cleaned up after processing
 
 ### 2. Person Detection
 The tool uses three complementary methods to detect people:
@@ -105,6 +98,14 @@ For each 30-second segment:
 - Extracts valid 30-second segments as MP4 files
 - Uses H.264 codec for compatibility
 - Preserves audio quality
+
+### 5. Progress Tracking
+The enhanced progress tracking system provides:
+- **Real-time Progress Bars**: Visual feedback during processing
+- **ETA Calculation**: Estimated time remaining for each stage
+- **Multi-stage Tracking**: Separate progress for downloading, analysis, and extraction
+- **Detailed Status Messages**: Current frame being analyzed, clip being extracted
+- **Performance Metrics**: Total processing time and per-stage timing
 
 ## Output
 

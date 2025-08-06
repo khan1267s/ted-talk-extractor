@@ -304,23 +304,4 @@ class TEDTalkProcessor:
         multi_tracker.complete()
         return clip_paths
 
-    def process_multiple_videos(self, urls: List[str], max_clips_per_video: int = 5, verbose_progress: bool = True) -> Dict[str, List[str]]:
-        """
-        Process a batch of videos from a list of URLs.
-        """
-        results = {}
-        batch_tracker = ProgressTracker(len(urls), "Processing videos", verbose=verbose_progress)
-        batch_tracker.start()
-        
-        for i, url in enumerate(urls):
-            logger.info(f"\nProcessing URL {i+1}/{len(urls)}: {url}")
-            batch_tracker.update(i, f"Processing: {url}")
-            try:
-                clip_paths = self.process_video(url, max_clips=max_clips_per_video, from_url=True, verbose_progress=verbose_progress)
-                results[url] = clip_paths
-            except Exception as e:
-                logger.error(f"Failed to process video {url}: {e}")
-                results[url] = []
-        
-        batch_tracker.complete(f"Processed {len(urls)} videos")
-        return results
+

@@ -2,9 +2,11 @@
 """
 Command-line interface for TED Talk Processor with enhanced progress tracking
 Process single TED Talk videos to extract speaker-only clips.
+Supports both uploaded video files and YouTube URLs.
 """
 
 import sys
+import os
 import argparse
 from pathlib import Path
 from ted_processor import TEDTalkProcessor
@@ -19,13 +21,19 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Process an uploaded video file
+  python process_ted_talk.py video.mp4
+  python process_ted_talk.py /path/to/uploaded_video.mp4 --max-clips 20
+  
+  # Process from YouTube URL
   python process_ted_talk.py "https://www.youtube.com/watch?v=VIDEO_ID"
-  python process_ted_talk.py video.mp4 --output-dir my_clips --max-clips 20
-  python process_ted_talk.py "https://www.youtube.com/watch?v=VIDEO_ID" --no-progress
+  
+  # Disable progress tracking
+  python process_ted_talk.py video.mp4 --no-progress
         """
     )
     
-    parser.add_argument('video', help='YouTube URL or local video file path')
+    parser.add_argument('video', help='Local video file path or YouTube URL')
     parser.add_argument('--output-dir', default='output_clips', help='Directory to save clips (default: output_clips)')
     parser.add_argument('--max-clips', type=int, default=30, help='Maximum number of clips to extract (default: 30)')
     parser.add_argument('--no-progress', action='store_true', help='Disable verbose progress tracking')
@@ -35,11 +43,27 @@ Examples:
     # Determine if input is URL or file
     is_url = args.video.startswith(('http://', 'https://', 'www.'))
     
+    # Validate local file exists if not URL
+    if not is_url:
+        video_path = Path(args.video)
+        if not video_path.exists():
+            print(f"Error: Video file not found: {args.video}")
+            sys.exit(1)
+        if not video_path.is_file():
+            print(f"Error: Path is not a file: {args.video}")
+            sys.exit(1)
+        # Use absolute path for consistency
+        args.video = str(video_path.absolute())
+    
     # Initialize processor
     processor = TEDTalkProcessor(output_dir=args.output_dir)
     
     # Print processing info
-    print(f"Processing: {args.video}")
+    if is_url:
+        print(f"Processing YouTube video: {args.video}")
+    else:
+        print(f"Processing uploaded video: {Path(args.video).name}")
+        print(f"File size: {os.path.getsize(args.video) / (1024*1024):.1f} MB")
     print(f"Output directory: {args.output_dir}")
     print(f"Max clips: {args.max_clips}")
     print(f"Progress tracking: {'Enabled' if not args.no_progress else 'Disabled'}")
