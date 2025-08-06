@@ -25,8 +25,7 @@ import yt_dlp
 from moviepy.editor import VideoFileClip
 
 # Person detection
-import torch
-from ultralytics import YOLO
+import face_recognition
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -40,7 +39,6 @@ app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
 APP_ROOT = Path(__file__).parent.resolve()
 DOWNLOADS_DIR = APP_ROOT / "downloads"
 CLIPS_DIR = APP_ROOT / "static" / "clips"
-YOLO_MODEL_PATH = APP_ROOT / "yolov8n.pt"
 
 # Create directories
 DOWNLOADS_DIR.mkdir(exist_ok=True)
@@ -56,12 +54,6 @@ class WebSpeakerExtractor:
         Initialize the web speaker extractor.
         """
         self.output_dir = CLIPS_DIR
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        logger.info(f"Using device: {self.device}")
-        
-        # Initialize YOLO model
-        self.model = YOLO(YOLO_MODEL_PATH)
-        self.model.to(self.device)
 
     def download_video(self, url: str) -> Optional[str]:
         """Download video from YouTube URL using yt-dlp."""
@@ -79,47 +71,34 @@ class WebSpeakerExtractor:
                 ydl_opts['proxy'] = proxy_url
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+                info = ydl.extract_info(url, download=True)
                 video_id = info['id']
-                file_path = DOWNLOADS_DIR / f"{video_id}.mp4"
+                file_path = list(DOWNLOADS_DIR.glob(f'{video_id}.*'))[0]
                 
-                expected_filesize = 0
-                for f in info['formats']:
-                    if f['format_id'] == info['format_id']:
-                        expected_filesize = f.get('filesize') or f.get('filesize_approx')
-                        break
-                
-                logger.info(f"Expected file size: {expected_filesize} bytes")
-                ydl.download([url])
-
-                if not file_path.exists():
+                if file_path.exists():
+                    logger.info(f"Video downloaded successfully: {file_path}")
+                    return str(file_path)
+                else:
                     logger.error("Video file not found after download.")
                     return None
-                
-                actual_filesize = file_path.stat().st_size
-                logger.info(f"Actual file size: {actual_filesize} bytes")
-                
-                if expected_filesize and actual_filesize < expected_filesize * 0.9:
-                    logger.error(f"Incomplete download. Expected ~{expected_filesize}, got {actual_filesize}")
-                    os.remove(file_path)
-                    return None
-                
-                logger.info(f"Video downloaded successfully: {file_path}")
-                return str(file_path)
         except Exception as e:
             logger.error(f"Error downloading video: {e}")
             return None
 
     def check_speaker_frame(self, frame: np.ndarray) -> bool:
         """
-        Check for a single person using YOLO.
+        Check for a single person using face_recognition.
         """
         try:
-            # Run YOLO detection
-            results = self.model(frame, verbose=False, classes=[0])  # Class 0 is 'person'
+            # Resize frame for faster processing
+            small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
+            rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
             
-            # Check for exactly one person detected
-            if len(results[0].boxes) != 1:
+            # Find all face locations in the current frame
+            face_locations = face_recognition.face_locations(rgb_small_frame)
+            
+            # Check if exactly one face was found
+            if len(face_locations) != 1:
                 return False
 
             # Check for low edge density (no slides/text)
@@ -127,7 +106,6 @@ class WebSpeakerExtractor:
             edges = cv2.Canny(gray, 50, 150)
             edge_density = np.sum(edges > 0) / (edges.shape[0] * edges.shape[1])
             
-            # If edge density is low, consider it a valid speaker frame
             return edge_density < 0.15
 
         except Exception as e:
