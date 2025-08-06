@@ -40,10 +40,6 @@ def main():
     
     if not urls:
         print("No URLs found in file. Please check the file format.")
-        print("Expected format: one URL per line")
-        print("Example:")
-        print("https://www.youtube.com/watch?v=u4ZoJKF_VuA")
-        print("https://www.youtube.com/watch?v=Ks-_Mh1QhMc")
         sys.exit(1)
     
     print(f"Found {len(urls)} URLs to process")
@@ -82,4 +78,4 @@ def main():
     print(f"Output directory: {output_dir}")
 
 if __name__ == "__main__":
-    main() 
+    main()

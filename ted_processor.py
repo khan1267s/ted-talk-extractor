@@ -1,333 +1,276 @@
 #!/usr/bin/env python3
 """
-TED Talk Processor
-Downloads TED Talks from YouTube and extracts speaker-only clips.
+TED Talk Processor Core Logic
 """
 
 import os
-import sys
 import cv2
 import numpy as np
-import re
 from pathlib import Path
-from typing import List, Tuple, Optional
-import argparse
-from tqdm import tqdm
+from typing import List, Tuple, Optional, Dict
 import logging
-
-# Set environment variable to handle PyTorch 2.6+ compatibility
-os.environ['TORCH_WEIGHTS_ONLY'] = 'False'
-
 import yt_dlp
-
-# Video processing
-# from pytube import YouTube # No longer using pytube
-
-# Person detection
-import mediapipe as mp
-try:
-    from transformers import CLIPProcessor, CLIPModel
-    import torch
-    CLIP_AVAILABLE = True
-except ImportError:
-    CLIP_AVAILABLE = False
-    
-try:
-    from ultralytics import YOLO
-    YOLO_AVAILABLE = True
-except ImportError:
-    YOLO_AVAILABLE = False
-
-# Import our OpenAI detector
-try:
-    from openai_detector import OpenAIPersonDetector
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
+from moviepy.editor import VideoFileClip
+from ultralytics import YOLO
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Define absolute paths
+APP_ROOT = Path(__file__).parent.resolve()
+DOWNLOADS_DIR = APP_ROOT / "downloads"
+DEFAULT_OUTPUT_DIR = APP_ROOT / "output_clips"
+MODEL_PATH = APP_ROOT / "yolov8n.pt"
+
+# Create directories
+DOWNLOADS_DIR.mkdir(exist_ok=True)
+DEFAULT_OUTPUT_DIR.mkdir(exist_ok=True)
+
 class TEDTalkProcessor:
-    def __init__(self, output_dir: str = "output_clips"):
+    def __init__(self, output_dir: str = str(DEFAULT_OUTPUT_DIR), model_path: str = str(MODEL_PATH)):
         """
-        Initialize the TED Talk processor.
-        
+        Initialize the TED Talk Processor.
         Args:
-            output_dir: Directory to save extracted clips
+            output_dir (str): Directory to save the output clips.
+            model_path (str): Path to the YOLOv8 model file.
         """
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
-        
-        # Initialize MediaPipe for person detection
-        self.mp_pose = mp.solutions.pose
-        self.mp_face = mp.solutions.face_detection
-        self.pose = self.mp_pose.Pose(
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
-        self.face_detection = self.mp_face.FaceDetection(
-            model_selection=1, min_detection_confidence=0.5
-        )
-        
-        # Use OpenAI Detector if available
-        if OPENAI_AVAILABLE:
-            self.detector = OpenAIPersonDetector()
-            logger.info("Using OpenAI CLIP detector.")
-        # Fallback to YOLO if available
-        elif YOLO_AVAILABLE:
-            try:
-                self.yolo_model = YOLO('yolov8n.pt')
-                self.detector = self
-                logger.info("Using YOLO detector.")
-            except Exception as e:
-                logger.warning(f"Could not load YOLO model: {e}")
-                self.detector = None
-        else:
-            self.detector = None
-            logger.error("No person detection model available.")
-    
-    def get_speaker_name(self, video_title: str) -> str:
-        """
-        Extracts the speaker's name from a TED Talk video title.
-        
-        Args:
-            video_title: The title of the YouTube video.
-            
-        Returns:
-            The extracted speaker name, or a default name if not found.
-        """
-        # Common TED patterns: "Speaker: Title" or "Title | Speaker"
-        match = re.match(r"([^:|]+)[:|]", video_title)
-        if match:
-            speaker = match.group(1).strip()
-        else:
-            # Fallback for "Title by Speaker"
-            match_by = re.search(r"by (.+)", video_title, re.IGNORECASE)
-            if match_by:
-                speaker = match_by.group(1).strip()
-            else:
-                speaker = "Unknown_Speaker"
+        self.model = self.load_model(model_path)
 
-        # Sanitize name for filesystem
-        speaker = re.sub(r'[\\/*?:"<>|]', "", speaker)
-        speaker = speaker.replace(" ", "_")
-        return speaker
-
-    def download_video(self, url: str) -> Optional[Tuple[str, str]]:
-        """
-        Download video from YouTube URL using yt-dlp.
+    def load_model(self, model_path: str):
+        """Load the YOLOv8 model."""
+        if not Path(model_path).exists():
+            logger.error(f"Model file not found at {model_path}")
+            raise FileNotFoundError(f"Model file not found at {model_path}")
         
-        Args:
-            url: YouTube video URL
-            
-        Returns:
-            Tuple of (path_to_video, video_title) or None if failed
-        """
-        downloads_dir = Path("downloads")
-        downloads_dir.mkdir(exist_ok=True)
-        
-        ydl_opts = {
-            'format': 'best[ext=mp4]/best',
-            'outtmpl': str(downloads_dir / '%(id)s.%(ext)s'),
-            'quiet': True,
-            'no_warnings': True,
-            'extractaudio': False,
-            'audioformat': 'mp3',
-            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'referer': 'https://www.youtube.com/',
-            'sleep_interval': 1,
-            'max_sleep_interval': 5,
-            'retries': 3,
-        }
-        
+        logger.info(f"Loading model from {model_path}")
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info_dict = ydl.extract_info(url, download=True)
-                video_id = info_dict.get('id', None)
-                video_title = info_dict.get('title', None)
-                video_path = str(downloads_dir / f"{video_id}.mp4")
-                
-                if not os.path.exists(video_path):
-                     # Try with webm if mp4 not available
-                    video_path = str(downloads_dir / f"{video_id}.webm")
-                    if not os.path.exists(video_path):
-                        logger.error("Downloaded video file not found.")
-                        return None
-
-                logger.info(f"Video downloaded successfully: {video_path}")
-                return video_path, video_title
-
+            return YOLO(model_path)
         except Exception as e:
-            logger.error(f"Error downloading video with yt-dlp: {e}")
+            logger.error(f"Error loading YOLO model: {e}")
+            raise
+
+    def download_video(self, url: str) -> Optional[str]:
+        """Download video from YouTube URL using yt-dlp."""
+        try:
+            logger.info(f"Downloading video from: {url}")
+            ydl_opts = {
+                'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                'outtmpl': str(DOWNLOADS_DIR / '%(id)s.%(ext)s'),
+                'quiet': True,
+                'no_warnings': True,
+            }
+            proxy_url = os.environ.get('PROXY_URL')
+            if proxy_url:
+                logger.info(f"Using proxy: {proxy_url}")
+                ydl_opts['proxy'] = proxy_url
+
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                video_id = info['id']
+                file_path = list(DOWNLOADS_DIR.glob(f'{video_id}.*'))[0]
+                
+                if file_path.exists():
+                    logger.info(f"Video downloaded successfully: {file_path}")
+                    return str(file_path)
+                else:
+                    logger.error("Video file not found after download.")
+                    return None
+        except Exception as e:
+            logger.error(f"Error downloading video: {e}")
             return None
 
-    def detect_persons_in_frame(self, frame: np.ndarray) -> int:
+    def check_speaker_frame(self, frame: np.ndarray) -> bool:
         """
-        Detect persons in a frame using multiple methods.
-        
-        Args:
-            frame: Input frame as numpy array
+        Check for a single person using YOLOv8.
+        A frame is considered a 'speaker frame' if it contains exactly one person
+        and the person occupies a significant portion of the frame.
+        """
+        try:
+            results = self.model(frame, classes=[0], verbose=False) # Class 0 is 'person' in COCO
             
-        Returns:
-            The number of persons detected.
-        """
-        person_count = 0
-        
-        # Method 1: YOLO detection
-        if self.yolo_model:
-            try:
-                results = self.yolo_model(frame, verbose=False)
-                for result in results:
-                    boxes = result.boxes
-                    if boxes is not None:
-                        for box in boxes:
-                            if int(box.cls) == 0:  # person class in COCO
-                                person_count += 1
-            except Exception as e:
-                logger.debug(f"YOLO detection failed: {e}")
-        
-        return person_count
+            # We are looking for exactly one person
+            if len(results) == 0 or len(results[0].boxes) != 1:
+                return False
 
-    def is_speaker_only_frame(self, frame: np.ndarray) -> bool:
-        """
-        Check if frame contains only the main speaker.
-        """
-        if not self.detector:
+            box = results[0].boxes[0].xywh[0]
+            _, _, w, h = box
+            
+            frame_height, frame_width, _ = frame.shape
+            box_area = w * h
+            frame_area = frame_width * frame_height
+
+            # The person should occupy a certain percentage of the frame to be considered the speaker
+            # This helps filter out audience members or distant figures
+            area_ratio = box_area / frame_area
+            if area_ratio < 0.1 or area_ratio > 0.9:
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.debug(f"Frame check failed: {e}")
             return False
-        return self.detector.is_speaker_only_frame(frame)
 
-    def analyze_video_segments(self, video_path: str, segment_duration: int = 30, overlap: int = 15) -> List[Tuple[float, float]]:
-        """
-        Analyze video to find speaker-only segments with overlap.
-        
-        Args:
-            video_path: Path to video file
-            segment_duration: Duration of each clip in seconds
-            overlap: Overlap between clips in seconds
-            
-        Returns:
-            List of (start_time, end_time) tuples for valid segments
-        """
-        logger.info(f"Analyzing video: {video_path}")
-        
+    def find_speaker_segments(self, video_path: str, progress_callback=None) -> List[Tuple[float, float]]:
+        """Find speaker-only segments."""
+        logger.info(f"Finding speaker segments in: {video_path}")
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             logger.error(f"Could not open video file: {video_path}")
             return []
 
         fps = cap.get(cv2.CAP_PROP_FPS)
-        duration = cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps
-        
-        valid_segments = []
-        step = segment_duration - overlap
-        
-        for start_time in tqdm(np.arange(0, duration - segment_duration, step), desc="Analyzing segments"):
-            end_time = start_time + segment_duration
-            
-            # Sample 10 frames from this segment
-            sample_times = np.linspace(start_time, end_time, 10)
-            
-            speaker_only_count = 0
-            for sample_time in sample_times:
-                cap.set(cv2.CAP_PROP_POS_MSEC, sample_time * 1000)
-                ret, frame = cap.read()
-                if ret and self.is_speaker_only_frame(frame):
-                    speaker_only_count += 1
-            
-            if speaker_only_count / 10 >= 0.7: # At least 70% of frames are good
-                valid_segments.append((start_time, end_time))
-                logger.info(f"Valid segment found: {start_time:.1f}s - {end_time:.1f}s")
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps
+        logger.info(f"Video duration: {duration:.2f}s, FPS: {fps:.2f}, Total frames: {total_frames}")
 
+        sample_interval_seconds = 1
+        frame_interval = int(fps * sample_interval_seconds)
+        good_frames = []
+
+        for frame_idx in range(0, total_frames, frame_interval):
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            if self.check_speaker_frame(frame):
+                good_frames.append(frame_idx)
+            
+            if progress_callback:
+                progress = int((frame_idx / total_frames) * 100)
+                progress_callback(progress)
+        
         cap.release()
-        logger.info(f"Found {len(valid_segments)} valid speaker-only segments")
-        return valid_segments
+        
+        if progress_callback:
+            progress_callback(100)
 
-    def extract_clips(self, video_path: str, segments: List[Tuple[float, float]], speaker_name: str, speaker_dir: Path, max_clips: int = 5) -> List[str]:
-        """
-        Extract clips and save to a speaker-specific directory.
-        """
-        logger.info(f"Extracting up to {max_clips} clips for {speaker_name}...")
+        segments = self.frames_to_segments(good_frames, fps, duration)
+        logger.info(f"Found {len(segments)} speaker segments")
+        return segments
+
+    def frames_to_segments(self, good_frames: List[int], fps: float, duration: float) -> List[Tuple[float, float]]:
+        """Convert good frame numbers to time segments, tolerating gaps."""
+        if not good_frames:
+            return []
+
+        segments = []
+        start_frame = good_frames[0]
+        max_gap_seconds = 8
+        max_gap_frames = int(fps * max_gap_seconds)
+        min_segment_duration = 20
+
+        for i in range(1, len(good_frames)):
+            gap = good_frames[i] - good_frames[i - 1]
+            if gap > max_gap_frames:
+                end_frame = good_frames[i - 1]
+                if (end_frame - start_frame) / fps >= min_segment_duration:
+                    segments.append((start_frame / fps, end_frame / fps))
+                start_frame = good_frames[i]
         
+        end_frame = good_frames[-1]
+        if (end_frame - start_frame) / fps >= min_segment_duration:
+            segments.append((start_frame / fps, end_frame / fps))
+
+        return segments
+
+    def extract_clips(self, video_path: str, segments: List[Tuple[float, float]], max_clips: int = 5) -> List[str]:
+        """Extract non-overlapping clips."""
+        logger.info(f"Extracting clips from {len(segments)} segments...")
         clip_paths = []
-        video = VideoFileClip(video_path)
+        try:
+            video = VideoFileClip(video_path)
+        except Exception as e:
+            logger.error(f"Failed to load video file with MoviePy: {e}")
+            return []
         
-        for i, (start_time, end_time) in enumerate(segments[:max_clips]):
-            clip_filename = f"{speaker_name}_{i+1}.mp4"
-            clip_path = speaker_dir / clip_filename
+        segments = sorted(segments, key=lambda x: x[1] - x[0], reverse=True)
+        used_time_ranges = []
+        clip_duration = 25
+
+        for i, (start_time, end_time) in enumerate(segments):
+            if len(clip_paths) >= max_clips:
+                break
+            if end_time - start_time < clip_duration:
+                continue
+
+            clip_start = start_time
+            is_overlapping = any(max(clip_start, s) < min(clip_start + clip_duration, e) for s, e in used_time_ranges)
             
+            if is_overlapping:
+                continue
+
             try:
-                clip = video.subclip(start_time, end_time)
+                clip = video.subclip(clip_start, clip_start + clip_duration)
+                video_name = Path(video_path).stem
+                clip_filename = f"{video_name}_speaker_clip_{len(clip_paths)+1:03d}.mp4"
+                clip_path = self.output_dir / clip_filename
+                
                 clip.write_videofile(
                     str(clip_path),
                     codec='libx264',
                     audio_codec='aac',
-                    verbose=False,
+                    preset='fast',
+                    threads=4,
                     logger=None
                 )
+                
                 clip_paths.append(str(clip_path))
-                logger.info(f"Saved clip: {clip_path.name}")
+                used_time_ranges.append((clip_start, clip_start + clip_duration))
+                logger.info(f"Extracted clip {len(clip_paths)}: {clip_filename}")
+
             except Exception as e:
-                logger.error(f"Error extracting clip {clip_filename}: {e}")
+                logger.error(f"Error extracting clip {i+1}: {e}")
 
         video.close()
         return clip_paths
 
-    def process_video(self, url: str, max_clips: int = 5, overlap: int = 15) -> List[str]:
+    def process_video(self, video_path: str, max_clips: int = 5, from_url: bool = False, progress_callback=None) -> List[str]:
         """
-        Process a single video: download, analyze, and extract clips.
+        Full processing pipeline for a single video file.
         """
-        logger.info(f"Processing video: {url}")
-
-        # Download video and get metadata
-        download_result = self.download_video(url)
-        if not download_result:
-            return []
-        video_path, video_title = download_result
-        
-        speaker_name = self.get_speaker_name(video_title)
-        speaker_dir = self.output_dir / speaker_name
-        
-        # Skip if already processed
-        if speaker_dir.exists() and any(speaker_dir.iterdir()):
-            logger.info(f"Speaker '{speaker_name}' already processed. Skipping.")
-            return [str(p) for p in speaker_dir.iterdir()]
-        
-        speaker_dir.mkdir(exist_ok=True)
-        
-        # Analyze and extract
-        segments = self.analyze_video_segments(video_path, overlap=overlap)
-        
-        if not segments:
-            logger.warning("No valid speaker-only segments found.")
-            clip_paths = []
+        if from_url:
+            actual_video_path = self.download_video(video_path)
+            if not actual_video_path:
+                logger.error("Failed to download video")
+                return []
         else:
-            clip_paths = self.extract_clips(video_path, segments, speaker_name, speaker_dir, max_clips)
+            actual_video_path = video_path
+
+        logger.info(f"Processing video: {actual_video_path}")
+        segments = self.find_speaker_segments(actual_video_path, progress_callback)
+        if not segments:
+            logger.warning("No valid speaker segments found")
+            if from_url:
+                os.remove(actual_video_path)
+            return []
         
-        # Clean up
-        try:
-            os.remove(video_path)
-            logger.info("Cleaned up downloaded video.")
-        except OSError as e:
-            logger.warning(f"Could not remove video file {video_path}: {e}")
-            
+        clip_paths = self.extract_clips(actual_video_path, segments, max_clips)
+        
+        if from_url:
+            try:
+                os.remove(actual_video_path)
+                logger.info(f"Cleaned up downloaded video: {actual_video_path}")
+            except Exception as e:
+                logger.warning(f"Could not clean up video file: {e}")
+        
         return clip_paths
 
-def main():
-    """Main function to run the TED Talk processor from command line."""
-    parser = argparse.ArgumentParser(description="TED Talk Processor - Extract speaker-only clips.")
-    parser.add_argument("urls", nargs="+", help="YouTube video URLs to process")
-    parser.add_argument("--output-dir", default="output_clips", help="Root output directory for clips")
-    parser.add_argument("--max-clips", type=int, default=5, help="Maximum number of clips per video")
-    parser.add_argument("--overlap", type=int, default=15, help="Overlap in seconds between clips")
-    
-    args = parser.parse_args()
-    
-    processor = TEDTalkProcessor(args.output_dir)
-    
-    for url in args.urls:
-        processor.process_video(url, args.max_clips, args.overlap)
-
-if __name__ == "__main__":
-    main()
+    def process_multiple_videos(self, urls: List[str], max_clips_per_video: int = 5) -> Dict[str, List[str]]:
+        """
+        Process a batch of videos from a list of URLs.
+        """
+        results = {}
+        for i, url in enumerate(urls):
+            logger.info(f"\nProcessing URL {i+1}/{len(urls)}: {url}")
+            try:
+                clip_paths = self.process_video(url, max_clips=max_clips_per_video, from_url=True)
+                results[url] = clip_paths
+            except Exception as e:
+                logger.error(f"Failed to process video {url}: {e}")
+                results[url] = []
+        return results

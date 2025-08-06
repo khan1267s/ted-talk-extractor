@@ -4,21 +4,20 @@ FROM python:3.9-slim
 WORKDIR /app
 
 # Install system dependencies including FFmpeg
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsm6 \
     libxext6 \
-    libxrender-dev \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
-COPY requirements_web.txt .
+COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements_web.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
+# Copy application files and model
 COPY . .
 
 # Create necessary directories
@@ -32,9 +31,5 @@ ENV PYTHONUNBUFFERED=1
 # Expose port
 EXPOSE 5000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:5000/ || exit 1
-
-# Run the application using our Python startup script
-CMD ["python", "run.py"] 
+# Run the application
+CMD ["python", "app.py"]
