@@ -1,78 +1,45 @@
-# This file specifies files that are intentionally untracked by gcloud
-# If you would like to upload your .git directory, .gitignore file or files
-# from your .gitignore file, remove the corresponding line below:
+.gcloudignore
+# This file specifies files that are *not* uploaded to Google Cloud.
+# See https://cloud.google.com/sdk/gcloud/reference/topic/gcloudignore for more details.
 
-.git
-.gitignore
-
-# Python pycache:
+# Python pycache and compiled files
 __pycache__/
-*.py[co]
-
-# Byte-compiled / optimized / DLL files
 *.pyc
 *.pyo
 *.pyd
-__pycache__
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
+# Git files
+.git/
+.gitignore
+
+# Large media directories that are generated at runtime
 downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+static/clips/
+output_clips/
 
-# PyInstaller
-*.manifest
-*.spec
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# IDE
+# IDE and OS files
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-# OS
 .DS_Store
 Thumbs.db
 
-# Project specific
-downloads/
-static/clips/
-yolov8n.pt
-*.mp4
-*.avi
-*.mov
-*.mkv
+# Virtual environments
+venv/
+env/
+
+# Unnecessary project files
+*~
+*.swp
+*.swo
+.env
+.venv
+ENV/
+*.pt
+*.md
+docker-compose.yml
+requirements.txt
+quick_start.bat
+sample_urls.txt
+test_installation.py
+test_video.py
+ted_talk_pipeline.py
