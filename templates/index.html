@@ -377,7 +377,7 @@
                                             
                                             <!-- File Upload Tab -->
                                             <div class="tab-pane fade" id="upload-pane" role="tabpanel">
-                                                <form id="uploadForm" enctype="multipart/form-data">
+                                                <form id="uploadForm" enctype="multipart/form-data" method="post">
                                                     <div class="mb-3">
                                                         <label for="videoFile" class="form-label fw-bold">
                                                             Upload Video File
@@ -385,6 +385,7 @@
                                                         <input type="file" 
                                                                class="form-control form-control-lg" 
                                                                id="videoFile" 
+                                                               name="videoFile"
                                                                accept=".mp4,.avi,.mov,.mkv,.webm"
                                                                required>
                                                         <div class="form-text">

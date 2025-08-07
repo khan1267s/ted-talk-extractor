@@ -179,9 +179,19 @@ extractor = WebSpeakerExtractor()
 def run_processing(job_id, video_path, max_clips):
     global jobs
     try:
+        logger.info(f"Starting processing job {job_id} for video: {video_path}")
+        
+        # Check if video file exists
+        if not os.path.exists(video_path):
+            logger.error(f"Video file not found: {video_path}")
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+            
         jobs[job_id].update({'status': 'processing', 'progress': 30, 'message': 'Analyzing video...'})
+        logger.info("Finding speaker segments...")
         segments = extractor.find_speaker_segments(video_path)
+        
         if not segments:
+            logger.warning("No valid speaker segments found")
             raise ValueError("No valid speaker segments found.")
 
         jobs[job_id].update({'progress': 60, 'message': 'Extracting clips...'})
@@ -230,16 +240,40 @@ def process_video_route():
 @app.route('/api/upload', methods=['POST'])
 def upload_video():
     global job_counter
-    if 'videoFile' not in request.files: return jsonify({'error': 'No file part in request.'}), 400
+    logger.info("Upload endpoint called")
+    
+    # Check if file exists in request
+    if 'videoFile' not in request.files:
+        logger.error("No file part in request")
+        return jsonify({'error': 'No file part in request.'}), 400
+    
     file = request.files['videoFile']
-    if file.filename == '': return jsonify({'error': 'No selected file.'}), 400
+    logger.info(f"Received file: {file.filename}")
+    
+    if file.filename == '':
+        logger.error("No selected file")
+        return jsonify({'error': 'No selected file.'}), 400
     
     max_clips = int(request.form.get('max_clips', 5))
     
     if file and file.filename.lower().endswith(('.mp4', '.mov', '.avi', '.mkv')):
-        filename = secure_filename(file.filename)
-        file_path = DOWNLOADS_DIR / filename
-        file.save(str(file_path))
+        try:
+            filename = secure_filename(file.filename)
+            file_path = DOWNLOADS_DIR / filename
+            logger.info(f"Saving file to: {file_path}")
+            
+            # Ensure directory exists
+            DOWNLOADS_DIR.mkdir(exist_ok=True)
+            
+            # Save the file
+            file.save(str(file_path))
+            logger.info("File saved successfully")
+            
+            if not file_path.exists():
+                logger.error(f"File not found after save: {file_path}")
+                return jsonify({'error': 'Failed to save uploaded file'}), 500
+                
+            logger.info(f"File size: {file_path.stat().st_size} bytes")
         
         job_counter += 1
         job_id = f"job_{job_counter}_{int(time.time())}"
