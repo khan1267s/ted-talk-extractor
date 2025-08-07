@@ -1,9 +1,11 @@
-scikit-learn
-numpy
-Flask
+flask
+werkzeug
 yt-dlp
 moviepy
-opencv-python
-ultralytics
-Werkzeug
+opencv-python-headless
+Pillow
+tqdm
+requests
 gunicorn
+face_recognition
+dlib
