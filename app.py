@@ -13,6 +13,7 @@ from typing import List, Tuple, Optional
 import logging
 import json
 import time
+import threading
 from datetime import datetime
 
 # Web framework
@@ -41,7 +42,7 @@ CASCADE_FILE = APP_ROOT / "haarcascade_frontalface_default.xml"
 DOWNLOADS_DIR.mkdir(exist_ok=True)
 CLIPS_DIR.mkdir(exist_ok=True, parents=True)
 
-# Global variables for job tracking
+# Global variables
 jobs = {}
 job_counter = 0
 
@@ -51,6 +52,7 @@ class WebSpeakerExtractor:
         Initialize the web speaker extractor.
         """
         self.output_dir = CLIPS_DIR
+        # Load the Haar Cascade classifier for face detection
         self.face_cascade = cv2.CascadeClassifier(str(CASCADE_FILE))
         if self.face_cascade.empty():
             logger.error("Could not load Haar Cascade classifier. Make sure the XML file is present.")
@@ -60,7 +62,7 @@ class WebSpeakerExtractor:
         try:
             logger.info(f"Downloading video from: {url}")
             ydl_opts = {
-                'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', # Limit to 720p
                 'outtmpl': str(DOWNLOADS_DIR / '%(id)s.%(ext)s'),
                 'quiet': True,
                 'no_warnings': True,
@@ -95,7 +97,7 @@ class WebSpeakerExtractor:
             edges = cv2.Canny(gray, 50, 150)
             edge_density = np.sum(edges > 0) / (edges.shape[0] * edges.shape[1])
             
-            return edge_density < 0.20
+            return edge_density < 0.20 # Increased tolerance
 
         except Exception as e:
             logger.debug(f"Frame check failed: {e}")
@@ -111,8 +113,8 @@ class WebSpeakerExtractor:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         good_frames = []
         
-        frame_interval = int(fps * 2)
-        if frame_interval == 0: frame_interval = 1
+        frame_interval = int(fps * 2) # Sample every 2 seconds
+        if frame_interval == 0: frame_interval = 1 # Avoid infinite loop
 
         for frame_idx in range(0, total_frames, frame_interval):
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
@@ -169,12 +171,12 @@ class WebSpeakerExtractor:
         video.close()
         return clip_paths
 
+# Initialize extractor and other app setup...
 extractor = WebSpeakerExtractor()
 
+# Flask routes remain the same...
+
 def run_processing(job_id, video_path, max_clips):
-    """
-    This function runs the main video processing logic sequentially.
-    """
     global jobs
     try:
         jobs[job_id].update({'status': 'processing', 'progress': 30, 'message': 'Analyzing video...'})
@@ -222,7 +224,6 @@ def process_video_route():
         jobs[job_id].update({'status': 'failed', 'message': 'Failed to download video.'})
         return jsonify({'job_id': job_id})
     
-    # Run processing directly and wait for it to finish
     run_processing(job_id, video_path, max_clips)
     return jsonify({'job_id': job_id})
 
@@ -244,7 +245,6 @@ def upload_video():
         job_id = f"job_{job_counter}_{int(time.time())}"
         jobs[job_id] = {'id': job_id, 'status': 'queued', 'progress': 0, 'message': 'File uploaded, starting job...', 'result': [], 'start_time': time.time()}
 
-        # Run processing directly and wait for it to finish
         run_processing(job_id, str(file_path), max_clips)
         
         return jsonify({'job_id': job_id})
