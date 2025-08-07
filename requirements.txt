@@ -2,7 +2,7 @@ flask==2.3.3
 werkzeug==2.3.7
 yt-dlp==2025.7.21
 moviepy==1.0.3
-numpy==1.24.4
+# numpy is installed separately in Dockerfile
 opencv-python-headless==4.7.0.72
 Pillow==10.3.0
 tqdm==4.66.4

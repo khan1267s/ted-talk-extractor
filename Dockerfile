@@ -10,7 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 # Copy just the requirements file to leverage Docker cache
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install numpy first to avoid dependency conflicts
+RUN pip install --no-cache-dir numpy==1.24.4
+
+# Install other Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code
