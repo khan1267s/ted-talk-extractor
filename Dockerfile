@@ -1,35 +1,21 @@
+# Use an official lightweight Python image.
 FROM python:3.9-slim
 
-# Set working directory
+# Set the working directory in the container
 WORKDIR /app
 
-# Install system dependencies including FFmpeg
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    libsm6 \
-    libxext6 \
-    libglib2.0-0 \
-    && rm -rf /var/lib/apt/lists/*
+# Install system dependencies required for video processing
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
+# Copy just the requirements file to leverage Docker cache
 COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files and model
+# Copy the rest of the application code
 COPY . .
 
-# Create necessary directories
-RUN mkdir -p static/clips downloads templates
-
-# Set environment variables
-ENV FLASK_APP=app.py
-ENV FLASK_ENV=production
-ENV PYTHONUNBUFFERED=1
-
-# Expose port
-EXPOSE 5000
-
-# Run the application
-CMD ["python", "app.py"]
+# Set the entrypoint to run the app with Gunicorn
+# Gunicorn will listen on the port specified by the PORT env var (provided by App Engine)
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 app:app
