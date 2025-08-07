@@ -245,7 +245,9 @@ def upload_video():
         job_id = f"job_{job_counter}_{int(time.time())}"
         jobs[job_id] = {'id': job_id, 'status': 'queued', 'progress': 0, 'message': 'File uploaded, starting job...', 'result': [], 'start_time': time.time()}
 
-        run_processing(job_id, str(file_path), max_clips)
+        # Start processing in a separate thread
+        thread = threading.Thread(target=run_processing, args=(job_id, str(file_path), max_clips))
+        thread.start()
         
         return jsonify({'job_id': job_id})
     

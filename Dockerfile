@@ -16,8 +16,14 @@ RUN pip install --no-cache-dir numpy==1.24.4
 # Install other Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create required directories
+RUN mkdir -p static/clips downloads
+
 # Copy the rest of the application code
 COPY . .
+
+# Ensure proper permissions
+RUN chmod -R 777 static downloads
 
 # Set the entrypoint to run the app with Gunicorn
 # Gunicorn will listen on the port specified by the PORT env var (provided by App Engine)
