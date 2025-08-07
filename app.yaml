@@ -10,7 +10,6 @@ resources:
 automatic_scaling:
   min_num_instances: 1
   max_num_instances: 2
-  target_cpu_utilization: 0.6
 
 network:
   session_affinity: true
