@@ -1,5 +1,5 @@
 
-runtime: python312
+runtime: custom
 env: flex
 
 resources:
