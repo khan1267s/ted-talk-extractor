@@ -274,16 +274,20 @@ def upload_video():
                 return jsonify({'error': 'Failed to save uploaded file'}), 500
                 
             logger.info(f"File size: {file_path.stat().st_size} bytes")
-        
-        job_counter += 1
-        job_id = f"job_{job_counter}_{int(time.time())}"
-        jobs[job_id] = {'id': job_id, 'status': 'queued', 'progress': 0, 'message': 'File uploaded, starting job...', 'result': [], 'start_time': time.time()}
+            
+            job_counter += 1
+            job_id = f"job_{job_counter}_{int(time.time())}"
+            jobs[job_id] = {'id': job_id, 'status': 'queued', 'progress': 0, 'message': 'File uploaded, starting job...', 'result': [], 'start_time': time.time()}
 
-        # Start processing in a separate thread
-        thread = threading.Thread(target=run_processing, args=(job_id, str(file_path), max_clips))
-        thread.start()
-        
-        return jsonify({'job_id': job_id})
+            # Start processing in a separate thread
+            thread = threading.Thread(target=run_processing, args=(job_id, str(file_path), max_clips))
+            thread.start()
+            
+            return jsonify({'job_id': job_id})
+            
+        except Exception as e:
+            logger.error(f"Error processing upload: {e}")
+            return jsonify({'error': str(e)}), 500
     
     return jsonify({'error': 'Invalid file type.'}), 400
 
